@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { authenticator } from 'otplib';
-import * as qrcode from 'qrcode';
+import { toDataURL } from 'qrcode';
 
 @Injectable()
 export class TotpService {
@@ -11,7 +11,7 @@ export class TotpService {
   async generateQrDataUri(secret: string, email: string): Promise<string> {
     const issuer = 'nest-app';
     const uri = authenticator.keyuri(email, issuer, secret);
-    return await qrcode.toDataURL(uri, { width: 220, margin: 2 });
+    return await toDataURL(uri, { width: 220, margin: 2 });
   }
 
   verify(secret: string, code: string): boolean {

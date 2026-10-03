@@ -31,8 +31,10 @@ async function bootstrap() {
     .setTitle('Generated API')
     .setDescription('NestJS API documentation')
     .setVersion('1.0')
+    .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, config);
+  document.security = [{ bearer: [] }];
   SwaggerModule.setup('docs', app, document);
 
   await app.listen(process.env.PORT ?? 5000);

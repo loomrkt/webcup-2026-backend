@@ -10,7 +10,10 @@ import { User } from './entities/user.entity';
 import { OAuthAccount } from './entities/oauth-account.entity';
 
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { GithubEnabledGuard, GoogleEnabledGuard } from './guards/oauth-enabled.guard';
+import {
+  GithubEnabledGuard,
+  GoogleEnabledGuard,
+} from './guards/oauth-enabled.guard';
 
 import { GithubStrategy } from './strategies/github.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
@@ -34,7 +37,6 @@ import { TwoFactorService } from './services/two-factor.service';
 
 import { VerificationService } from './services/verification.service';
 
-
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -42,11 +44,32 @@ import { VerificationService } from './services/verification.service';
       RefreshToken,
       PasswordResetToken,
       OAuthAccount,
-
     ]),
   ],
-  controllers: [AuthController, TwoFactorController, VerificationController, OAuthController],
-  providers: [AuthService, MailService, TokenService, TwoFactorService, TotpService, { provide: TWO_FACTOR_SERVICE, useExisting: TwoFactorService }, VerificationService, { provide: VERIFICATION_SERVICE, useExisting: VerificationService }, OAuthService, GoogleStrategy, GithubStrategy, GoogleEnabledGuard, GithubEnabledGuard, JwtStrategy, LocalStrategy, JwtAuthGuard],
+  controllers: [
+    AuthController,
+    TwoFactorController,
+    VerificationController,
+    OAuthController,
+  ],
+  providers: [
+    AuthService,
+    MailService,
+    TokenService,
+    TwoFactorService,
+    TotpService,
+    { provide: TWO_FACTOR_SERVICE, useExisting: TwoFactorService },
+    VerificationService,
+    { provide: VERIFICATION_SERVICE, useExisting: VerificationService },
+    OAuthService,
+    GoogleStrategy,
+    GithubStrategy,
+    GoogleEnabledGuard,
+    GithubEnabledGuard,
+    JwtStrategy,
+    LocalStrategy,
+    JwtAuthGuard,
+  ],
   exports: [AuthService, JwtAuthGuard, TokenService],
 })
 export class AuthModule {}

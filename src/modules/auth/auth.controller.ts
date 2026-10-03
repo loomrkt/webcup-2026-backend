@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
 import { RateLimitGuard, Throttle } from '../../common/rate-limit.guard';
@@ -9,6 +9,7 @@ import {
   ResetPasswordDto,
 } from './dto/misc.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/profile.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService, LoginResult } from './services/auth.service';
@@ -64,15 +65,33 @@ export class AuthController {
   async me(
     @CurrentUser() currentUser: { id: string },
   ): Promise<ApiSuccessResponse<unknown>> {
-    const user = await this.authService.getProfile(currentUser.id);
+    const user = await this.authService.getProfileWithRoles(currentUser.id);
+    if (!user) {
+      return success(null, 'Profile fetched');
+    }
+    return success(user, 'Profile fetched');
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  async updateMe(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body: UpdateProfileDto,
+  ): Promise<ApiSuccessResponse<unknown>> {
+    const user = await this.authService.updateProfile(currentUser.id, body);
     return success(
       {
         id: user?.id,
         email: user?.email,
-        emailVerified: !!user?.emailVerifiedAt,
-        totpActive: user?.totpActive ?? false,
+        profile: {
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          phone: user?.phone,
+          address: user?.address,
+          city: user?.city,
+        },
       },
-      'Profile fetched',
+      'Profile updated',
     );
   }
 

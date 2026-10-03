@@ -18,13 +18,7 @@ import { RbacService } from './rbac.service';
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      Permission,
-      Role,
-      UserRole,
-      User,
-      Organization,
-    ]),
+    TypeOrmModule.forFeature([Permission, Role, UserRole, User, Organization]),
     AuthModule,
   ],
   controllers: [RbacController, HierarchyController, TenantController],

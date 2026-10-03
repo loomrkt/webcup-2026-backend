@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import * as GitHubStrategy from 'passport-github2';
+import { Strategy as GitHubStrategy } from 'passport-github2';
 
 type GitHubProfile = {
   id: number;
@@ -11,10 +11,7 @@ type GitHubProfile = {
 };
 
 @Injectable()
-export class GithubStrategy extends PassportStrategy(
-  GitHubStrategy.Strategy,
-  'github',
-) {
+export class GithubStrategy extends PassportStrategy(GitHubStrategy, 'github') {
   constructor(private readonly config: ConfigService) {
     super({
       clientID:

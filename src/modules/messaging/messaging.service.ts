@@ -522,7 +522,7 @@ export class MessagingService {
     if (query.before) {
       qb.andWhere('m.createdAt < :before', { before: new Date(query.before) });
     }
-    
+
     const messages = await qb.getMany();
     // @purge:replies-start
     return this.attachReplyTo(messages);

@@ -21,4 +21,7 @@ export interface VerificationService {
 
 export interface RbacService {
   assignDefaultAdminIfFirstUser(userId: string): Promise<void>;
+  assignDefaultCitizenRoleIfMissing(userId: string): Promise<void>;
+  rolesForUser(userId: string): Promise<Array<{ id: string; name: string }>>;
+  effectivePermissions(userId: string): Promise<string[]>;
 }

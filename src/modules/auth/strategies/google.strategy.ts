@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import * as GoogleOAuth20 from 'passport-google-oauth20';
+import { Strategy as GoogleOAuth20Strategy } from 'passport-google-oauth20';
 
 type GoogleProfile = {
   id: string;
@@ -15,7 +15,7 @@ export const isGoogleConfigured = (config: ConfigService): boolean =>
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(
-  GoogleOAuth20.Strategy,
+  GoogleOAuth20Strategy,
   'google',
 ) {
   constructor(private readonly config: ConfigService) {

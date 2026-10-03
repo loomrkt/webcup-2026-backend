@@ -111,6 +111,7 @@ export class AuthService {
     }
     if (this.rbac) {
       await this.rbac.assignDefaultAdminIfFirstUser(saved.id);
+      await this.rbac.assignDefaultCitizenRoleIfMissing(saved.id);
     }
     return saved;
   }
@@ -237,6 +238,48 @@ export class AuthService {
 
   async getProfile(userId: string): Promise<AuthUser | null> {
     return this.getUserById(userId);
+  }
+
+  async getProfileWithRoles(userId: string) {
+    const user = await this.getUserById(userId);
+    if (!user) return null;
+    const roles = (await this.rbac?.rolesForUser(userId)) ?? [];
+    const permissions = (await this.rbac?.effectivePermissions(userId)) ?? [];
+    return {
+      id: user.id,
+      email: user.email,
+      emailVerified: !!user.emailVerifiedAt,
+      totpActive: user.totpActive ?? false,
+      profile: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        address: user.address,
+        city: user.city,
+      },
+      roles,
+      permissions,
+    };
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: {
+      firstName?: string | null;
+      lastName?: string | null;
+      phone?: string | null;
+      address?: string | null;
+      city?: string | null;
+    },
+  ): Promise<AuthUser | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (dto.firstName !== undefined) user.firstName = dto.firstName ?? null;
+    if (dto.lastName !== undefined) user.lastName = dto.lastName ?? null;
+    if (dto.phone !== undefined) user.phone = dto.phone ?? null;
+    if (dto.address !== undefined) user.address = dto.address ?? null;
+    if (dto.city !== undefined) user.city = dto.city ?? null;
+    return toAuthUser(await this.users.save(user));
   }
 
   async forgotPassword(email: string): Promise<void> {
