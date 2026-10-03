@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   Req,
@@ -18,6 +19,11 @@ import {
   RefreshTokenDto,
   ResetPasswordDto,
 } from './dto/misc.dto';
+import {
+  PasswordlessRequestDto,
+  PasswordlessVerifyDto,
+  RevokeAllSessionsDto,
+} from './dto/passwordless.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/profile.dto';
 import { UpdateOnboardingDto, UpdatePreferencesDto } from './dto/profile.dto';
@@ -63,12 +69,95 @@ export class AuthController {
   @Post('refresh')
   @Throttle({ limit: 60, windowSec: 900 })
   async refresh(
+    @Req() req: Request,
     @Body() body: RefreshTokenDto,
   ): Promise<
     ApiSuccessResponse<{ accessToken: string; refreshToken: string }>
   > {
-    const result = await this.authService.refresh(body.refreshToken);
+    const result = await this.authService.refresh(body.refreshToken, {
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     return success(result, 'Tokens refreshed');
+  }
+
+  @Post('passwordless/request')
+  @Throttle({ limit: 10, windowSec: 900 })
+  async passwordlessRequest(
+    @Req() req: Request,
+    @Body() body: PasswordlessRequestDto,
+  ): Promise<ApiSuccessResponse<null>> {
+    await this.authService.passwordlessRequest(body.email, {
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
+    return success(
+      null,
+      'If that email exists, a one-time sign-in code has been sent',
+    );
+  }
+
+  @Post('passwordless/verify')
+  @Throttle({ limit: 10, windowSec: 900 })
+  async passwordlessVerify(
+    @Req() req: Request,
+    @Body() body: PasswordlessVerifyDto,
+  ): Promise<ApiSuccessResponse<LoginResult>> {
+    const result = await this.authService.passwordlessVerify(
+      body.email,
+      body.code,
+      {
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      },
+    );
+    return success(result, 'Sign-in code verified');
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ limit: 60, windowSec: 900 })
+  async sessions(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body?: RefreshTokenDto,
+  ): Promise<ApiSuccessResponse<unknown>> {
+    return success(
+      await this.authService.sessions(currentUser.id, body?.refreshToken),
+      'Sessions fetched',
+    );
+  }
+
+  @Post('sessions/revoke-all')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ limit: 20, windowSec: 900 })
+  async revokeAllSessions(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body: RevokeAllSessionsDto,
+  ): Promise<ApiSuccessResponse<{ revoked: number }>> {
+    return success(
+      await this.authService.revokeAllSessions(
+        currentUser.id,
+        body.refreshToken,
+      ),
+      'All other sessions revoked',
+    );
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ limit: 30, windowSec: 900 })
+  async revokeSession(
+    @Req() req: Request,
+    @CurrentUser() currentUser: { id: string },
+    @Param('id') id: string,
+  ): Promise<ApiSuccessResponse<{ id: string; revoked: boolean }>> {
+    return success(
+      await this.authService.revokeSession(currentUser.id, id, {
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      }),
+      'Session revoked',
+    );
   }
 
   @Post('logout')

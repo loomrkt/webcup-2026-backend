@@ -54,6 +54,10 @@ export class User {
   recoveryCodes: string[] | null;
   // @purge:2fa-end
 
+  // F53 — seconde étape de vérification par code envoyé par email
+  @Column({ name: 'mfa_email_active', type: 'boolean', default: false })
+  mfaEmailActive: boolean;
+
   // @purge:verif-start
   @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
   emailVerifiedAt: Date | null;

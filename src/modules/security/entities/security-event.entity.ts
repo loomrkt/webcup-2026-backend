@@ -16,6 +16,11 @@ export const SECURITY_EVENT_TYPES = [
   'email_verified',
   'two_factor_verified',
   'two_factor_failed',
+  'passwordless_requested',
+  'passwordless_verified',
+  'mfa_email_sent',
+  'new_device_login',
+  'session_revoked',
 ] as const;
 export type SecurityEventType = (typeof SECURITY_EVENT_TYPES)[number];
 

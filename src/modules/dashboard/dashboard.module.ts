@@ -4,6 +4,7 @@ import { User } from '../auth/entities/user.entity';
 import { ContactMessage } from '../contact/entities/contact-message.entity';
 import { Publication } from '../news/entities/publication.entity';
 import { Request } from '../requests/entities/request.entity';
+import { RequestHistory } from '../requests/entities/request-history.entity';
 import { Service } from '../services/entities/service.entity';
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
@@ -16,6 +17,7 @@ import { DashboardService } from './dashboard.service';
       Publication,
       ContactMessage,
       Request,
+      RequestHistory,
     ]),
   ],
   controllers: [DashboardController],

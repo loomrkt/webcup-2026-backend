@@ -34,6 +34,13 @@ export class RefreshToken {
   @Column({ name: 'replaced_by', type: 'varchar', nullable: true })
   replacedById: string | null;
 
+  /** F54 — informations sur l'appareil qui a ouvert la session. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  ip: string | null;
+
+  @Column({ name: 'user_agent', type: 'varchar', length: 300, nullable: true })
+  userAgent: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

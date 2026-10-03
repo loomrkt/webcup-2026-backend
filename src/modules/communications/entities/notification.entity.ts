@@ -15,6 +15,8 @@ export const NOTIFICATION_TYPES = [
   'system',
   'appointment',
   'reminder',
+  'request',
+  'security',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

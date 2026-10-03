@@ -13,7 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { compare, hash } from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import {
   BCRYPT_ROUNDS,
   RBAC_SERVICE,
@@ -22,6 +22,7 @@ import {
   TwoFactorService,
   VERIFICATION_SERVICE,
   VerificationService,
+  type MfaFactor,
 } from '../auth.constants';
 import { PasswordResetToken } from '../entities/password-reset-token.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
@@ -29,6 +30,7 @@ import { User } from '../entities/user.entity';
 import { AttemptLimiter } from '../../../common/attempt-limiter';
 import { TooManyRequestsException } from '../../../common/rate-limit.guard';
 import { hashToken } from '../utils/token.util';
+import { EmailCodeService } from './email-code.service';
 import { MailService } from './mail.service';
 import { TokenService, TokenPair } from './token.service';
 import {
@@ -47,7 +49,11 @@ export type AuthUser = User &
 
 export type LoginResult =
   | (TokenPair & { requiresTwoFactor: false })
-  | { requiresTwoFactor: true; pendingToken: string };
+  | {
+      requiresTwoFactor: true;
+      pendingToken: string;
+      factors: MfaFactor[];
+    };
 
 export function toAuthUser(user: User): AuthUser {
   return user;
@@ -69,6 +75,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly security: SecurityService,
     private readonly audit: AuditService,
+    private readonly emailCodes: EmailCodeService,
     @Optional()
     @Inject(TWO_FACTOR_SERVICE)
     private readonly twoFactor?: TwoFactorService | null,
@@ -208,12 +215,13 @@ export class AuthService {
     await this.security.recordSuccess(user, context);
     return {
       requiresTwoFactor: false,
-      ...(await this.tokenService.issueTokenPair(user)),
+      ...(await this.tokenService.issueTokenPair(user, context)),
     };
   }
 
   async refresh(
     refreshToken: string,
+    context: LoginContext = {},
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload = this.tokenService.verifyRefreshToken(refreshToken);
     if (!payload.jti) {
@@ -245,6 +253,8 @@ export class AuthService {
         token: hashToken(newRefreshToken),
         userId: user.id,
         expiresAt: new Date(Date.now() + this.refreshExpiryMs()),
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
       }),
     );
     await this.refreshTokens.update(
@@ -273,6 +283,170 @@ export class AuthService {
     }
   }
 
+  // ─── D02 : connexion sans mot de passe (code envoyé par email) ────────────
+
+  private readonly passwordlessLimiter = new AttemptLimiter(5, 15 * 60 * 1000);
+
+  async passwordlessRequest(
+    email: string,
+    context: LoginContext = {},
+  ): Promise<void> {
+    const user = await this.users.findOne({
+      where: { email: email.toLowerCase().trim() },
+    });
+    if (!user || user.deletedAt) return;
+    await this.emailCodes.deliver(
+      user.id,
+      user.email,
+      'passwordless',
+      10,
+      'Votre code de connexion sans mot de passe',
+    );
+    await this.security.log('passwordless_requested', user.email, context, {
+      userId: user.id,
+    });
+  }
+
+  async passwordlessVerify(
+    email: string,
+    code: string,
+    context: LoginContext = {},
+  ): Promise<LoginResult> {
+    const key = email.toLowerCase().trim();
+    if (this.passwordlessLimiter.isLocked(key)) {
+      throw new TooManyRequestsException(
+        `Too many failed attempts. Try again in ${this.passwordlessLimiter.retryAfterSec(key)}s.`,
+      );
+    }
+    const user = await this.users.findOne({ where: { email: key } });
+    if (!user || user.deletedAt || !user.email) {
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+    if (user.status === 'suspended') {
+      throw new ForbiddenException(
+        'This account is suspended. Contact the municipality for assistance.',
+      );
+    }
+    const guard = this.security.isLocked(user);
+    if (guard.locked) {
+      throw new TooManyRequestsException(
+        `Account temporarily locked. Try again in ${guard.retryAfterSec}s.`,
+      );
+    }
+    const valid = await this.emailCodes.verify(user.id, 'passwordless', code);
+    if (!valid) {
+      this.passwordlessLimiter.recordFailure(key);
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+    this.passwordlessLimiter.reset(key);
+    await this.emailCodes.invalidate(user.id, 'passwordless');
+    if (!user.emailVerifiedAt) {
+      user.emailVerifiedAt = new Date();
+      await this.users.save(user);
+    }
+    await this.security.recordSuccess(user, context);
+    await this.security.log('passwordless_verified', user.email, context, {
+      userId: user.id,
+    });
+    if (this.enable2fa && this.twoFactor && this.twoFactor.isActive(user)) {
+      return this.twoFactor.issuePendingLogin(user);
+    }
+    return {
+      requiresTwoFactor: false,
+      ...(await this.tokenService.issueTokenPair(user, context)),
+    };
+  }
+
+  // ─── F54 : sessions actives et révocation ─────────────────────────────────
+
+  async sessions(
+    userId: string,
+    currentRefreshToken?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      ip: string | null;
+      userAgent: string | null;
+      createdAt: Date;
+      expiresAt: Date;
+      current: boolean;
+    }>
+  > {
+    const now = new Date();
+    const currentHash = currentRefreshToken
+      ? hashToken(currentRefreshToken)
+      : null;
+    const tokens = await this.refreshTokens.find({
+      where: { userId, revokedAt: IsNull() },
+      order: { createdAt: 'DESC' },
+    });
+    return tokens
+      .filter((t) => t.expiresAt > now)
+      .map((t) => ({
+        id: t.id,
+        ip: t.ip ?? null,
+        userAgent: t.userAgent ?? null,
+        createdAt: t.createdAt,
+        expiresAt: t.expiresAt,
+        current: currentHash !== null && t.token === currentHash,
+      }));
+  }
+
+  async revokeSession(
+    userId: string,
+    sessionId: string,
+    context: LoginContext = {},
+  ): Promise<{ id: string; revoked: boolean }> {
+    const token = await this.refreshTokens.findOne({
+      where: { id: sessionId, userId },
+    });
+    if (!token || token.revokedAt) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.refreshTokens.update(
+      { id: token.id },
+      { revokedAt: new Date() },
+    );
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (user) {
+      await this.security.log('session_revoked', user.email, context, {
+        userId,
+        sessionId,
+      });
+    }
+    return { id: token.id, revoked: true };
+  }
+
+  async revokeAllSessions(
+    userId: string,
+    exceptRefreshToken?: string,
+    context: LoginContext = {},
+  ): Promise<{ revoked: number }> {
+    const exceptHash = exceptRefreshToken
+      ? hashToken(exceptRefreshToken)
+      : null;
+    const tokens = await this.refreshTokens.find({
+      where: { userId, revokedAt: IsNull() },
+    });
+    const toRevoke = tokens.filter(
+      (t) => t.expiresAt > new Date() && t.token !== exceptHash,
+    );
+    if (toRevoke.length > 0) {
+      await this.refreshTokens.update(
+        { id: In(toRevoke.map((t) => t.id)) },
+        { revokedAt: new Date() },
+      );
+    }
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (user) {
+      await this.security.log('session_revoked', user.email, context, {
+        userId,
+        revokedCount: toRevoke.length,
+      });
+    }
+    return { revoked: toRevoke.length };
+  }
+
   async getUserById(id: string): Promise<AuthUser | null> {
     const user = await this.users.findOne({ where: { id } });
     return user ? toAuthUser(user) : null;
@@ -292,6 +466,7 @@ export class AuthService {
       email: user.email,
       emailVerified: !!user.emailVerifiedAt,
       totpActive: user.totpActive ?? false,
+      mfaEmailActive: user.mfaEmailActive ?? false,
       profile: {
         firstName: user.firstName,
         lastName: user.lastName,

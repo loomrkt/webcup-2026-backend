@@ -8,6 +8,7 @@ import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { User } from './entities/user.entity';
 import { OAuthAccount } from './entities/oauth-account.entity';
+import { EmailCode } from './entities/email-code.entity';
 
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import {
@@ -27,6 +28,7 @@ import { TwoFactorController } from './two-factor.controller';
 import { VerificationController } from './verification.controller';
 
 import { AuthService } from './services/auth.service';
+import { EmailCodeService } from './services/email-code.service';
 import { MailService } from './services/mail.service';
 import { OAuthService } from './services/oauth.service';
 
@@ -47,6 +49,7 @@ import { AuditModule } from '../audit/audit.module';
       RefreshToken,
       PasswordResetToken,
       OAuthAccount,
+      EmailCode,
     ]),
     AccountsModule,
     SecurityModule,
@@ -62,6 +65,7 @@ import { AuditModule } from '../audit/audit.module';
     AuthService,
     MailService,
     TokenService,
+    EmailCodeService,
     TwoFactorService,
     TotpService,
     { provide: TWO_FACTOR_SERVICE, useExisting: TwoFactorService },

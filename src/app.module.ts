@@ -21,6 +21,8 @@ import { SecurityModule } from './modules/security/security.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { PlacesModule } from './modules/places/places.module';
 import { GlossaryModule } from './modules/glossary/glossary.module';
+import { ParticipationModule } from './modules/participation/participation.module';
+import { PrivacyModule } from './modules/privacy/privacy.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { GlossaryModule } from './modules/glossary/glossary.module';
     AppointmentsModule,
     PlacesModule,
     GlossaryModule,
+    ParticipationModule,
+    PrivacyModule,
   ],
   controllers: [AppController],
   providers: [AppService],

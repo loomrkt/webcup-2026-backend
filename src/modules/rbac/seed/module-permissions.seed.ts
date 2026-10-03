@@ -29,6 +29,23 @@ export const MODULE_PERMISSIONS = [
   { name: 'requests.create', description: 'Submit a citizen request' },
   { name: 'requests.read', description: 'List/read citizen requests' },
   { name: 'requests.update', description: 'Update citizen requests' },
+  { name: 'requests.support', description: 'Support an existing request' },
+  {
+    name: 'participation.concerns.create',
+    description: 'Submit a data-usage concern',
+  },
+  {
+    name: 'participation.concerns.read',
+    description: 'Read data-usage concerns (own or all for agents)',
+  },
+  {
+    name: 'participation.concerns.update',
+    description: 'Update data-usage concerns (agents)',
+  },
+  {
+    name: 'privacy.export',
+    description: 'Export own personal data (GDPR access right)',
+  },
   { name: 'dashboard.read', description: 'Read platform dashboard statistics' },
   { name: 'nova-terra.read', description: 'Read data from the Nova Terra API' },
   { name: 'i18n.read', description: 'List/read translations' },

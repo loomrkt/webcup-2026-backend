@@ -1,9 +1,12 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
 import { RateLimitGuard, Throttle } from '../../common/rate-limit.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import {
+  DisableEmailMfaDto,
+  SendEmailMfaCodeDto,
   TotpActivateDto,
   TotpDeactivateDto,
   VerifyTwoFactorDto,
@@ -19,13 +22,59 @@ export class TwoFactorController {
   @Post('2fa/verify')
   @Throttle({ limit: 10, windowSec: 900 })
   async verifyTwoFactor(
+    @Req() req: Request,
     @Body() body: VerifyTwoFactorDto,
   ): Promise<ApiSuccessResponse<LoginResult>> {
     const result = await this.twoFactorService.verifyTwoFactor(
       body.pendingToken,
       body.code,
+      {
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      },
     );
     return success(result, 'Two-factor verified');
+  }
+
+  @Post('2fa/email/send-code')
+  @Throttle({ limit: 10, windowSec: 900 })
+  async sendEmailMfaCode(
+    @Req() req: Request,
+    @Body() body: SendEmailMfaCodeDto,
+  ): Promise<ApiSuccessResponse<{ sent: boolean; expiresInSec: number }>> {
+    const result = await this.twoFactorService.sendEmailMfaCode(
+      body.pendingToken,
+      {
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      },
+    );
+    return success(result, 'Verification code sent by email');
+  }
+
+  @Post('2fa/email/enable')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ limit: 20, windowSec: 900 })
+  async enableEmailMfa(
+    @CurrentUser() currentUser: { id: string },
+  ): Promise<ApiSuccessResponse<{ mfaEmailActive: boolean }>> {
+    return success(
+      await this.twoFactorService.enableEmailMfa(currentUser.id),
+      'Email verification enabled',
+    );
+  }
+
+  @Post('2fa/email/disable')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ limit: 20, windowSec: 900 })
+  async disableEmailMfa(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body: DisableEmailMfaDto,
+  ): Promise<ApiSuccessResponse<{ mfaEmailActive: boolean }>> {
+    return success(
+      await this.twoFactorService.disableEmailMfa(currentUser.id, body.code),
+      'Email verification disabled',
+    );
   }
 
   @Post('2fa/setup')

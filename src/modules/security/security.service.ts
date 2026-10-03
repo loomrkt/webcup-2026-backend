@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
+import { CommunicationsService } from '../communications/communications.service';
 import { ListSecurityEventsQueryDto } from './dto/security.dto';
 import {
   SecurityEvent,
@@ -32,6 +33,7 @@ export class SecurityService {
     private readonly events: Repository<SecurityEvent>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    private readonly communications: CommunicationsService,
   ) {}
 
   async log(
@@ -39,12 +41,15 @@ export class SecurityService {
     email: string | null,
     context: LoginContext,
     details?: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<SecurityEvent | null> {
     try {
-      await this.events.save(
+      const userId =
+        typeof details?.userId === 'string' ? details.userId : null;
+      return await this.events.save(
         this.events.create({
           type,
           email,
+          userId,
           ip: context.ip ?? null,
           userAgent: context.userAgent ?? null,
           details: details ?? null,
@@ -52,6 +57,7 @@ export class SecurityService {
       );
     } catch {
       // le journal de sécurité ne doit jamais faire échouer l'authentification
+      return null;
     }
   }
 
@@ -105,13 +111,68 @@ export class SecurityService {
 
   /** Réinitialise le compteur et le verrouillage après un login réussi. */
   async recordSuccess(user: User, context: LoginContext): Promise<void> {
-    if (user.failedLoginCount || user.lockedUntil || user.lastFailedAt) {
-      user.failedLoginCount = 0;
-      user.lastFailedAt = null;
-      user.lockedUntil = null;
-      await this.users.save(user);
+    try {
+      if (user.failedLoginCount || user.lockedUntil || user.lastFailedAt) {
+        user.failedLoginCount = 0;
+        user.lastFailedAt = null;
+        user.lockedUntil = null;
+        await this.users.save(user);
+      }
+      const event = await this.log('login_success', user.email, context, {
+        userId: user.id,
+      });
+      await this.detectNewDevice(user, context, event?.id);
+    } catch {
+      // ne jamais faire échouer la connexion à cause du journal de sécurité
     }
-    await this.log('login_success', user.email, context, { userId: user.id });
+  }
+
+  /**
+   * F54 — détecte une connexion depuis un appareil inconnu et prévient le
+   * citoyen (notification + événement `new_device_login`).
+   */
+  private async detectNewDevice(
+    user: User,
+    context: LoginContext,
+    currentEventId?: string | null,
+  ): Promise<void> {
+    if (!user.id || !user.email || (!context.ip && !context.userAgent)) return;
+    // comparaison sur l'email : les anciens événements n'ont pas forcément la colonne userId
+    const previous = await this.events.find({
+      where: { type: 'login_success', email: user.email },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
+    const known = previous.some(
+      (e) =>
+        e.id !== currentEventId &&
+        e.ip === context.ip &&
+        e.userAgent === context.userAgent,
+    );
+    if (known) return;
+    await this.log('new_device_login', user.email, context, {
+      userId: user.id,
+    });
+    try {
+      const device =
+        context.userAgent && context.userAgent.length > 120
+          ? `${context.userAgent.slice(0, 117)}…`
+          : (context.userAgent ?? 'Appareil inconnu');
+      await this.communications.notify(
+        user.id,
+        'security',
+        'Nouvelle connexion détectée',
+        `Nous avons détecté une connexion à votre compte depuis un nouvel appareil (${device}${context.ip ? `, IP ${context.ip}` : ''}). Si c'est bien vous, aucune action n'est requise. Sinon, sécurisez immédiatement votre compte en révoquant cette session depuis votre espace sécurité.`,
+        'high',
+        {
+          entityType: 'security',
+          entityId: user.id,
+          url: '/auth/sessions',
+        },
+      );
+    } catch {
+      // la notification ne doit jamais faire échouer l'authentification
+    }
   }
 
   async list(query: ListSecurityEventsQueryDto): Promise<SecurityEventList> {

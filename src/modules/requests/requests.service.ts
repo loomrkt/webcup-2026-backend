@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,6 +9,7 @@ import { IsNull, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { RbacService } from '../rbac/rbac.service';
 import { AuditService } from '../audit/audit.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { Service } from '../services/entities/service.entity';
 import {
   CreateRequestDto,
@@ -18,6 +20,23 @@ import { RequestHistory } from './entities/request-history.entity';
 import { Request } from './entities/request.entity';
 
 const AGENT_PERMISSION = 'requests.update';
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Déposée',
+  in_progress: 'En cours de traitement',
+  resolved: 'Traitée',
+  rejected: 'Clôturée',
+};
+
+const STATUS_ACTIONS: Record<string, string> = {
+  pending: 'Votre demande a bien été enregistrée.',
+  in_progress:
+    'Aucune action n’est requise de votre part pour le moment. Vous serez recontacté·e si nécessaire.',
+  resolved:
+    'La solution apportée est disponible. Vous pouvez consulter le suivi de votre demande.',
+  rejected:
+    'La demande a été clôturée. Vous pouvez la consulter pour comprendre les raisons ou déposer une nouvelle demande.',
+};
 
 export type RequestIndicators = {
   pending: number;
@@ -31,6 +50,8 @@ export type RequestIndicators = {
 
 @Injectable()
 export class RequestsService {
+  private readonly logger = new Logger(RequestsService.name);
+
   constructor(
     @InjectRepository(Request)
     private readonly requests: Repository<Request>,
@@ -42,6 +63,7 @@ export class RequestsService {
     private readonly services: Repository<Service>,
     private readonly rbac: RbacService,
     private readonly audit: AuditService,
+    private readonly communications: CommunicationsService,
   ) {}
 
   private async isAgent(userId: string): Promise<boolean> {
@@ -189,6 +211,15 @@ export class RequestsService {
     return { items, total, page, limit };
   }
 
+  /** F56 — récapitulatif téléchargeable des demandes personnelles. */
+  async myRequestsSummary(userId: string): Promise<Request[]> {
+    return this.requests.find({
+      where: { citizenId: userId },
+      relations: { history: true, service: true },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async indicators(actorId: string): Promise<RequestIndicators> {
     if (!(await this.isAgent(actorId))) {
       throw new ForbiddenException('Only agents can read request indicators');
@@ -247,13 +278,12 @@ export class RequestsService {
       request.assignedToId = dto.assignedToId ?? null;
     }
     const saved = await this.requests.save(request);
+    const newComment = dto.comment ?? null;
     if (statusChanged || dto.comment) {
-      await this.recordHistory(
-        saved.id,
-        saved.status,
-        actorId,
-        dto.comment ?? null,
-      );
+      await this.recordHistory(saved.id, saved.status, actorId, newComment);
+    }
+    if (statusChanged) {
+      await this.notifyStatusChange(saved, newComment);
     }
     await this.audit.log({
       actorId,
@@ -264,5 +294,40 @@ export class RequestsService {
       after: { status: saved.status, priority: saved.priority },
     });
     return saved;
+  }
+
+  /** F49 — prévient le citoyen quand sa demande change d'état. */
+  private async notifyStatusChange(
+    request: Request,
+    comment: string | null,
+  ): Promise<void> {
+    if (!request.citizenId) return;
+    const label = STATUS_LABELS[request.status] ?? request.status;
+    const action = STATUS_ACTIONS[request.status] ?? '';
+    const bodyParts = [
+      `Votre demande ${request.ref} est passée au statut « ${label} ».`,
+      action,
+    ];
+    if (comment) bodyParts.push(`Message de la municipalité : ${comment}`);
+    try {
+      await this.communications.notify(
+        request.citizenId,
+        'request',
+        `Votre demande ${request.ref} : ${label}`,
+        bodyParts.join(' '),
+        request.status === 'resolved' ? 'high' : 'normal',
+        {
+          entityType: 'request',
+          entityId: request.id,
+          url: `/requests/${request.id}`,
+          ref: request.ref,
+          status: request.status,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to notify citizen ${request.citizenId} of request ${request.id}: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
   }
 }
