@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { RbacService } from '../rbac/rbac.service';
+import { AuditService } from '../audit/audit.service';
 import { Service } from '../services/entities/service.entity';
 import {
   CreateRequestDto,
@@ -40,6 +41,7 @@ export class RequestsService {
     @InjectRepository(Service)
     private readonly services: Repository<Service>,
     private readonly rbac: RbacService,
+    private readonly audit: AuditService,
   ) {}
 
   private async isAgent(userId: string): Promise<boolean> {
@@ -253,6 +255,14 @@ export class RequestsService {
         dto.comment ?? null,
       );
     }
+    await this.audit.log({
+      actorId,
+      action: 'update',
+      entityType: 'request',
+      entityId: saved.id,
+      summary: `Mise à jour de la demande ${saved.ref} (statut : ${saved.status})`,
+      after: { status: saved.status, priority: saved.priority },
+    });
     return saved;
   }
 }

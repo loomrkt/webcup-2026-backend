@@ -16,6 +16,11 @@ import { CommunicationsModule } from './modules/communications/communications.mo
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { GuidesModule } from './modules/guides/guides.module';
 import { MobilityModule } from './modules/mobility/mobility.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { SecurityModule } from './modules/security/security.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { PlacesModule } from './modules/places/places.module';
+import { GlossaryModule } from './modules/glossary/glossary.module';
 
 @Module({
   imports: [
@@ -34,6 +39,11 @@ import { MobilityModule } from './modules/mobility/mobility.module';
     AccountsModule,
     GuidesModule,
     MobilityModule,
+    AuditModule,
+    SecurityModule,
+    AppointmentsModule,
+    PlacesModule,
+    GlossaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

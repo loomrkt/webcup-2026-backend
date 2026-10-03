@@ -5,8 +5,10 @@ import {
   Get,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
 import { RateLimitGuard, Throttle } from '../../common/rate-limit.guard';
@@ -48,9 +50,13 @@ export class AuthController {
   @Post('login')
   @Throttle({ limit: 20, windowSec: 900 })
   async login(
+    @Req() req: Request,
     @Body() body: LoginDto,
   ): Promise<ApiSuccessResponse<LoginResult>> {
-    const result = await this.authService.login(body.email, body.password);
+    const result = await this.authService.login(body.email, body.password, {
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     return success(result, 'Login successful');
   }
 
@@ -172,9 +178,13 @@ export class AuthController {
   @Post('forgot-password')
   @Throttle({ limit: 10, windowSec: 900 })
   async forgotPassword(
+    @Req() req: Request,
     @Body() body: ForgotPasswordDto,
   ): Promise<ApiSuccessResponse<null>> {
-    await this.authService.forgotPassword(body.email);
+    await this.authService.forgotPassword(body.email, {
+      ip: req.ip,
+      userAgent: req.headers?.['user-agent'],
+    });
     return success(null, 'If that email exists, a reset link has been sent');
   }
 

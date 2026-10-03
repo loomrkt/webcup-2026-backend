@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../auth/entities/user.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
+import { AuditModule } from '../audit/audit.module';
 import { AccountsController } from './accounts.controller';
 import { AccountsService } from './accounts.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, RefreshToken])],
+  imports: [TypeOrmModule.forFeature([User, RefreshToken]), AuditModule],
   controllers: [AccountsController],
   providers: [AccountsService],
   exports: [AccountsService],

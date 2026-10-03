@@ -7,6 +7,7 @@ import {
   UpdateTranslationDto,
 } from './dto/i18n.dto';
 import { Translation } from './entities/translation.entity';
+import { AuditService } from '../audit/audit.service';
 
 export const FALLBACK_LOCALE = 'fr';
 
@@ -15,6 +16,7 @@ export class I18nService {
   constructor(
     @InjectRepository(Translation)
     private readonly translations: Repository<Translation>,
+    private readonly audit: AuditService,
   ) {}
 
   /** Renvoie { field: value } pour une entité et une locale (repli sur la locale par défaut). */
@@ -74,7 +76,10 @@ export class I18nService {
     });
   }
 
-  async upsert(dto: CreateTranslationDto): Promise<Translation> {
+  async upsert(
+    actorId: string,
+    dto: CreateTranslationDto,
+  ): Promise<Translation> {
     const existing = await this.translations.findOne({
       where: {
         entityType: dto.entityType,
@@ -85,9 +90,17 @@ export class I18nService {
     });
     if (existing) {
       existing.value = dto.value;
-      return this.translations.save(existing);
+      const saved = await this.translations.save(existing);
+      await this.audit.log({
+        actorId,
+        action: 'update',
+        entityType: 'translation',
+        entityId: saved.id,
+        summary: `Mise à jour de la traduction ${saved.entityType}.${saved.field} (${saved.locale})`,
+      });
+      return saved;
     }
-    return this.translations.save(
+    const created = await this.translations.save(
       this.translations.create({
         entityType: dto.entityType,
         entityId: dto.entityId ?? null,
@@ -96,18 +109,45 @@ export class I18nService {
         value: dto.value,
       }),
     );
+    await this.audit.log({
+      actorId,
+      action: 'create',
+      entityType: 'translation',
+      entityId: created.id,
+      summary: `Création de la traduction ${created.entityType}.${created.field} (${created.locale})`,
+    });
+    return created;
   }
 
-  async update(id: string, dto: UpdateTranslationDto): Promise<Translation> {
+  async update(
+    actorId: string,
+    id: string,
+    dto: UpdateTranslationDto,
+  ): Promise<Translation> {
     const translation = await this.translations.findOne({ where: { id } });
     if (!translation) throw new NotFoundException('Translation not found');
     if (dto.value !== undefined) translation.value = dto.value;
-    return this.translations.save(translation);
+    const saved = await this.translations.save(translation);
+    await this.audit.log({
+      actorId,
+      action: 'update',
+      entityType: 'translation',
+      entityId: saved.id,
+      summary: `Mise à jour de la traduction ${saved.entityType}.${saved.field} (${saved.locale})`,
+    });
+    return saved;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(actorId: string, id: string): Promise<void> {
     const translation = await this.translations.findOne({ where: { id } });
     if (!translation) throw new NotFoundException('Translation not found');
     await this.translations.delete({ id });
+    await this.audit.log({
+      actorId,
+      action: 'delete',
+      entityType: 'translation',
+      entityId: id,
+      summary: `Suppression de la traduction ${translation.entityType}.${translation.field} (${translation.locale})`,
+    });
   }
 }

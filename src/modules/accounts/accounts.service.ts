@@ -9,6 +9,7 @@ import { compare } from 'bcryptjs';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
+import { AuditService } from '../audit/audit.service';
 import {
   DeleteAccountDto,
   DeleteOwnAccountDto,
@@ -32,6 +33,7 @@ export class AccountsService {
     private readonly users: Repository<User>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokens: Repository<RefreshToken>,
+    private readonly audit: AuditService,
   ) {}
 
   // ─── Suppression par le citoyen (F33) ──────────────────────────────────────
@@ -79,6 +81,7 @@ export class AccountsService {
   }
 
   private async anonymizeAccount(user: User): Promise<void> {
+    const originalEmail = user.email;
     user.email = `deleted-${user.id.slice(0, 8)}@${DELETED_EMAIL_DOMAIN}`;
     user.firstName = null;
     user.lastName = null;
@@ -95,6 +98,14 @@ export class AccountsService {
     user.status = 'deleted';
     await this.users.save(user);
     await this.refreshTokens.delete({ userId: user.id });
+    await this.audit.log({
+      actorId: user.id,
+      actorEmail: originalEmail,
+      action: 'delete',
+      entityType: 'account',
+      entityId: user.id,
+      summary: `Suppression du compte (${originalEmail})`,
+    });
   }
 
   // ─── Administration des comptes (F34) ─────────────────────────────────────
@@ -135,6 +146,11 @@ export class AccountsService {
     if (user.deletedAt) {
       throw new BadRequestException('Cannot update a deleted account');
     }
+    const before = {
+      status: user.status,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    };
     if (dto.status !== undefined) {
       if (user.status === 'deleted') {
         throw new BadRequestException(
@@ -145,7 +161,22 @@ export class AccountsService {
     }
     if (dto.firstName !== undefined) user.firstName = dto.firstName ?? null;
     if (dto.lastName !== undefined) user.lastName = dto.lastName ?? null;
-    return this.users.save(user);
+    const saved = await this.users.save(user);
+    await this.audit.log({
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'update',
+      entityType: 'account',
+      entityId: user.id,
+      summary: `Mise à jour du compte (statut : ${before.status} → ${saved.status})`,
+      before,
+      after: {
+        status: saved.status,
+        firstName: saved.firstName,
+        lastName: saved.lastName,
+      },
+    });
+    return saved;
   }
 
   async delete(id: string, dto: DeleteAccountDto): Promise<void> {
@@ -153,6 +184,12 @@ export class AccountsService {
     if (!user) throw new NotFoundException('Account not found');
     if (dto.permanent === true) {
       await this.users.delete({ id });
+      await this.audit.log({
+        action: 'delete',
+        entityType: 'account',
+        entityId: id,
+        summary: `Suppression physique du compte ${user.email}`,
+      });
       return;
     }
     if (user.deletedAt) {
@@ -168,10 +205,20 @@ export class AccountsService {
     if (!user.deletedAt) {
       throw new BadRequestException('Account is not deleted');
     }
+    const original = user.email;
     user.email = `restored-${user.id.slice(0, 8)}@${DELETED_EMAIL_DOMAIN}`;
     user.deletedAt = null;
     user.status = 'active';
-    return this.users.save(user);
+    const saved = await this.users.save(user);
+    await this.audit.log({
+      actorId: user.id,
+      actorEmail: original,
+      action: 'restore',
+      entityType: 'account',
+      entityId: user.id,
+      summary: `Restauration du compte ${original}`,
+    });
+    return saved;
   }
 
   /** Retourne le nombre de comptes actifs (indicateurs dashboard). */

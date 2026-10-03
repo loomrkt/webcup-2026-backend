@@ -75,6 +75,23 @@ export class UpdatePreferencesDto {
     message: `lineSpacing must be one of: ${LINE_SPACINGS.join(', ')}`,
   })
   lineSpacing?: LineSpacing;
+
+  @IsOptional()
+  @IsIn(['default', 'high-contrast', 'dark'], {
+    message: 'colorScheme must be one of: default, high-contrast, dark',
+  })
+  colorScheme?: string;
+
+  @IsOptional()
+  @IsIn(['none', 'protanopia', 'deuteranopia', 'tritanopia'], {
+    message:
+      'colorBlind must be one of: none, protanopia, deuteranopia, tritanopia',
+  })
+  colorBlind?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  plainLanguage?: boolean;
 }
 
 export class UpdateOnboardingDto {

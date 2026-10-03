@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { CommunicationsService } from '../communications/communications.service';
 import { Alert } from '../communications/entities/alert.entity';
 import { I18nService } from '../i18n/i18n.service';
+import { AuditService } from '../audit/audit.service';
 import { Request } from '../requests/entities/request.entity';
 import { CreateServiceDto, UpdateServiceDto } from './dto/services.dto';
 import { Service } from './entities/service.entity';
@@ -40,6 +41,7 @@ export class ServicesService {
     private readonly requests: Repository<Request>,
     private readonly i18n: I18nService,
     private readonly communications: CommunicationsService,
+    private readonly audit: AuditService,
   ) {}
 
   private async attachTranslations(
@@ -70,9 +72,26 @@ export class ServicesService {
   ): Promise<Array<Service & { translations: Record<string, string> }>> {
     const services = await this.services.find({
       where: { active: true },
+      relations: { alternativeService: true },
       order: { order: 'ASC', name: 'ASC' },
     });
     return this.attachTranslationsMany(services, locale);
+  }
+
+  /** Vue d'ensemble du Service Status Center (F38). */
+  async statusSummary() {
+    const impacted = await this.services.find({
+      where: [{ status: 'maintenance' }, { status: 'incident' }],
+      relations: { alternativeService: true },
+      order: { name: 'ASC' },
+    });
+    return {
+      healthy: await this.services.count({
+        where: { status: 'available', active: true },
+      }),
+      maintenance: impacted.filter((s) => s.status === 'maintenance'),
+      incident: impacted.filter((s) => s.status === 'incident'),
+    };
   }
 
   async getPublic(
@@ -164,7 +183,7 @@ export class ServicesService {
     if (existing) {
       throw new ConflictException(`Slug "${slug}" already exists`);
     }
-    return this.services.save(
+    const created = await this.services.save(
       this.services.create({
         name: dto.name.trim(),
         slug,
@@ -175,8 +194,19 @@ export class ServicesService {
         active: dto.active ?? true,
         featured: dto.featured ?? false,
         featuredOrder: dto.featuredOrder ?? 0,
+        status: dto.status ?? 'available',
+        statusMessage: dto.statusMessage ?? null,
+        resumeAt: dto.resumeAt ? new Date(dto.resumeAt) : null,
+        alternativeServiceId: dto.alternativeServiceId ?? null,
       }),
     );
+    await this.audit.log({
+      action: 'create',
+      entityType: 'service',
+      entityId: created.id,
+      summary: `Création du service « ${created.name} »`,
+    });
+    return created;
   }
 
   async update(id: string, dto: UpdateServiceDto): Promise<Service> {
@@ -202,12 +232,36 @@ export class ServicesService {
     if (dto.featuredOrder !== undefined) {
       service.featuredOrder = dto.featuredOrder;
     }
-    return this.services.save(service);
+    if (dto.status !== undefined) service.status = dto.status;
+    if (dto.statusMessage !== undefined) {
+      service.statusMessage = dto.statusMessage ?? null;
+    }
+    if (dto.resumeAt !== undefined) {
+      service.resumeAt = dto.resumeAt ? new Date(dto.resumeAt) : null;
+    }
+    if (dto.alternativeServiceId !== undefined) {
+      service.alternativeServiceId = dto.alternativeServiceId ?? null;
+    }
+    const saved = await this.services.save(service);
+    await this.audit.log({
+      action: 'update',
+      entityType: 'service',
+      entityId: saved.id,
+      summary: `Modification du service « ${saved.name} » (statut : ${saved.status})`,
+      after: { name: saved.name, status: saved.status },
+    });
+    return saved;
   }
 
   async delete(id: string): Promise<void> {
     const service = await this.services.findOne({ where: { id } });
     if (!service) throw new NotFoundException('Service not found');
     await this.services.delete({ id });
+    await this.audit.log({
+      action: 'delete',
+      entityType: 'service',
+      entityId: id,
+      summary: `Suppression du service « ${service.name} »`,
+    });
   }
 }

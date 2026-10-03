@@ -56,6 +56,15 @@ export class ServicesController {
     );
   }
 
+  @Get('status')
+  @Public()
+  async status(): Promise<ApiSuccessResponse<unknown>> {
+    return success(
+      await this.services.statusSummary(),
+      'Service status fetched',
+    );
+  }
+
   @Get('search')
   @Public()
   async search(

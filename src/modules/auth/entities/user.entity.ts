@@ -79,6 +79,15 @@ export class User {
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
+  @Column({ name: 'locked_until', type: 'timestamptz', nullable: true })
+  lockedUntil: Date | null;
+
+  @Column({ name: 'failed_login_count', type: 'int', default: 0 })
+  failedLoginCount: number;
+
+  @Column({ name: 'last_failed_at', type: 'timestamptz', nullable: true })
+  lastFailedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -6,12 +6,14 @@ import {
   UpdateContactMessageDto,
 } from './dto/contact.dto';
 import { ContactMessage } from './entities/contact-message.entity';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class ContactService {
   constructor(
     @InjectRepository(ContactMessage)
     private readonly messages: Repository<ContactMessage>,
+    private readonly audit: AuditService,
   ) {}
 
   async create(
@@ -51,6 +53,14 @@ export class ContactService {
       message.handledById = actorId;
       message.handledAt = new Date();
     }
-    return this.messages.save(message);
+    const saved = await this.messages.save(message);
+    await this.audit.log({
+      actorId,
+      action: 'update',
+      entityType: 'contact_message',
+      entityId: saved.id,
+      summary: `Traitement du message de ${saved.name} (statut : ${saved.status})`,
+    });
+    return saved;
   }
 }

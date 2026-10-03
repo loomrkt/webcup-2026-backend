@@ -37,6 +37,8 @@ import { TwoFactorService } from './services/two-factor.service';
 
 import { VerificationService } from './services/verification.service';
 import { AccountsModule } from '../accounts/accounts.module';
+import { SecurityModule } from '../security/security.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -47,6 +49,8 @@ import { AccountsModule } from '../accounts/accounts.module';
       OAuthAccount,
     ]),
     AccountsModule,
+    SecurityModule,
+    AuditModule,
   ],
   controllers: [
     AuthController,

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
+import { AuditService } from '../audit/audit.service';
 import { CreateGuideStepDto, UpdateGuideStepDto } from './dto/guides.dto';
 import { GuideStep } from './entities/guide-step.entity';
 
@@ -17,6 +18,7 @@ export class GuidesService {
     private readonly steps: Repository<GuideStep>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    private readonly audit: AuditService,
   ) {}
 
   async listActive(): Promise<GuideStep[]> {
@@ -30,8 +32,8 @@ export class GuidesService {
     return this.steps.find({ order: { order: 'ASC' } });
   }
 
-  async create(dto: CreateGuideStepDto): Promise<GuideStep> {
-    return this.steps.save(
+  async create(actorId: string, dto: CreateGuideStepDto): Promise<GuideStep> {
+    const step = await this.steps.save(
       this.steps.create({
         key: dto.key.trim(),
         title: dto.title.trim(),
@@ -42,9 +44,21 @@ export class GuidesService {
         active: dto.active ?? true,
       }),
     );
+    await this.audit.log({
+      actorId,
+      action: 'create',
+      entityType: 'guide_step',
+      entityId: step.id,
+      summary: `Création de l'étape de guide « ${step.title} »`,
+    });
+    return step;
   }
 
-  async update(id: string, dto: UpdateGuideStepDto): Promise<GuideStep> {
+  async update(
+    actorId: string,
+    id: string,
+    dto: UpdateGuideStepDto,
+  ): Promise<GuideStep> {
     const step = await this.steps.findOne({ where: { id } });
     if (!step) throw new NotFoundException('Guide step not found');
     if (dto.title !== undefined) step.title = dto.title.trim();
@@ -53,13 +67,28 @@ export class GuidesService {
     if (dto.order !== undefined) step.order = dto.order;
     if (dto.dismissible !== undefined) step.dismissible = dto.dismissible;
     if (dto.active !== undefined) step.active = dto.active;
-    return this.steps.save(step);
+    const saved = await this.steps.save(step);
+    await this.audit.log({
+      actorId,
+      action: 'update',
+      entityType: 'guide_step',
+      entityId: saved.id,
+      summary: `Modification de l'étape de guide « ${saved.title} »`,
+    });
+    return saved;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(actorId: string, id: string): Promise<void> {
     const step = await this.steps.findOne({ where: { id } });
     if (!step) throw new NotFoundException('Guide step not found');
     await this.steps.delete({ id });
+    await this.audit.log({
+      actorId,
+      action: 'delete',
+      entityType: 'guide_step',
+      entityId: id,
+      summary: `Suppression de l'étape de guide « ${step.title} »`,
+    });
   }
 
   private progressOf(user: User): GuideProgress {

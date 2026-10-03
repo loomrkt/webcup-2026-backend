@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../rbac/decorators/require-permission.decorator';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard';
@@ -48,10 +49,11 @@ export class MobilityController {
   @Post('lines')
   @RequirePermission('mobility.create')
   async create(
+    @CurrentUser() currentUser: { id: string },
     @Body() body: CreateMobilityLineDto,
   ): Promise<ApiSuccessResponse<MobilityLine>> {
     return success(
-      await this.mobility.create(body),
+      await this.mobility.create(currentUser.id, body),
       'Mobility line created',
       HttpStatus.CREATED,
     );
@@ -69,19 +71,23 @@ export class MobilityController {
   @Patch('lines/:id')
   @RequirePermission('mobility.update')
   async update(
+    @CurrentUser() currentUser: { id: string },
     @Param('id') id: string,
     @Body() body: UpdateMobilityLineDto,
   ): Promise<ApiSuccessResponse<MobilityLine>> {
     return success(
-      await this.mobility.update(id, body),
+      await this.mobility.update(currentUser.id, id, body),
       'Mobility line updated',
     );
   }
 
   @Delete('lines/:id')
   @RequirePermission('mobility.delete')
-  async remove(@Param('id') id: string): Promise<ApiSuccessResponse<null>> {
-    await this.mobility.remove(id);
+  async remove(
+    @CurrentUser() currentUser: { id: string },
+    @Param('id') id: string,
+  ): Promise<ApiSuccessResponse<null>> {
+    await this.mobility.remove(currentUser.id, id);
     return success(null, 'Mobility line deleted');
   }
 

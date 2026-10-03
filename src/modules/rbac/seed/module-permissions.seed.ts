@@ -82,4 +82,32 @@ export const MODULE_PERMISSIONS = [
     name: 'mobility.delete',
     description: 'Delete mobility lines and schedules',
   },
+  {
+    name: 'security.read',
+    description: 'Read security events and locked accounts',
+  },
+  {
+    name: 'appointments.read',
+    description: 'Read own appointments and available slots',
+  },
+  {
+    name: 'appointments.create',
+    description: 'Book an appointment',
+  },
+  {
+    name: 'appointments.manage',
+    description: 'Manage slots and appointments (agents)',
+  },
+  {
+    name: 'places.manage',
+    description: 'Create/update/delete places',
+  },
+  {
+    name: 'glossary.manage',
+    description: 'Create/update/delete glossary terms',
+  },
+  {
+    name: 'audit.read',
+    description: 'Read the audit log',
+  },
 ];

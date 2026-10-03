@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
+import { AuditService } from '../audit/audit.service';
 import { AiAlertService, type AiAlertDraft } from './ai-alert.service';
 import {
   AiGenerateAlertDto,
@@ -48,6 +49,7 @@ export class CommunicationsService {
     @InjectRepository(User)
     private readonly users: Repository<User>,
     private readonly ai: AiAlertService,
+    private readonly audit: AuditService,
   ) {}
 
   // ─── Annonces (D18) ────────────────────────────────────────────────────────
@@ -77,6 +79,13 @@ export class CommunicationsService {
       }),
     );
     if (publish) await this.broadcastAnnouncement(announcement);
+    await this.audit.log({
+      actorId,
+      action: publish ? 'publish' : 'create',
+      entityType: 'announcement',
+      entityId: announcement.id,
+      summary: `${publish ? 'Publication' : 'Création'} de l'annonce « ${announcement.title} »`,
+    });
     return announcement;
   }
 
@@ -149,6 +158,12 @@ export class CommunicationsService {
     if (saved.status === 'published' && !wasPublished) {
       await this.broadcastAnnouncement(saved);
     }
+    await this.audit.log({
+      action: 'update',
+      entityType: 'announcement',
+      entityId: saved.id,
+      summary: `Modification de l'annonce « ${saved.title} » (statut : ${saved.status})`,
+    });
     return saved;
   }
 
@@ -156,6 +171,12 @@ export class CommunicationsService {
     const announcement = await this.announcements.findOne({ where: { id } });
     if (!announcement) throw new NotFoundException('Announcement not found');
     await this.announcements.delete({ id });
+    await this.audit.log({
+      action: 'delete',
+      entityType: 'announcement',
+      entityId: id,
+      summary: `Suppression de l'annonce « ${announcement.title} »`,
+    });
   }
 
   // ─── Alertes (F29) ─────────────────────────────────────────────────────────
@@ -186,6 +207,13 @@ export class CommunicationsService {
       }),
     );
     if (publish) await this.broadcastAlert(alert);
+    await this.audit.log({
+      actorId,
+      action: publish ? 'publish' : 'create',
+      entityType: 'alert',
+      entityId: alert.id,
+      summary: `${publish ? 'Activation' : 'Création'} de l'alerte « ${alert.title} »`,
+    });
     return alert;
   }
 
@@ -244,6 +272,12 @@ export class CommunicationsService {
     if (saved.status === 'active' && !wasActive) {
       await this.broadcastAlert(saved);
     }
+    await this.audit.log({
+      action: 'update',
+      entityType: 'alert',
+      entityId: saved.id,
+      summary: `Modification de l'alerte « ${saved.title} » (statut : ${saved.status})`,
+    });
     return saved;
   }
 
@@ -256,9 +290,38 @@ export class CommunicationsService {
     const alert = await this.alerts.findOne({ where: { id } });
     if (!alert) throw new NotFoundException('Alert not found');
     await this.alerts.delete({ id });
+    await this.audit.log({
+      action: 'delete',
+      entityType: 'alert',
+      entityId: id,
+      summary: `Suppression de l'alerte « ${alert.title} »`,
+    });
   }
 
   // ─── Diffusion / Notifications (F30) ───────────────────────────────────────
+
+  /** Crée une notification immédiate ou planifiée (rappel F40). */
+  async notify(
+    userId: string,
+    type: string,
+    title: string,
+    body: string,
+    priority = 'normal',
+    payload?: Record<string, unknown> | null,
+    scheduledAt?: Date | null,
+  ): Promise<Notification> {
+    return this.notifications.save(
+      this.notifications.create({
+        userId,
+        type: type as Notification['type'],
+        title,
+        body,
+        priority,
+        payload: payload ?? null,
+        scheduledAt: scheduledAt ?? null,
+      }),
+    );
+  }
 
   private isVulnerable(user: Pick<User, 'birthDate'>): boolean {
     if (!user.birthDate) return false;
@@ -353,26 +416,35 @@ export class CommunicationsService {
   ): Promise<NotificationList> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where: Record<string, unknown> = { userId };
-    if (query.type) where.type = query.type;
-    if (query.read === 'true') where.readAt = Not(IsNull());
-    if (query.read === 'false') where.readAt = IsNull();
-    const [items, total] = await this.notifications.findAndCount({
-      where,
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-    const unreadCount = await this.notifications.count({
-      where: { userId, readAt: IsNull() },
-    });
+    const now = new Date();
+    const builder = this.notifications
+      .createQueryBuilder('n')
+      .where('n.userId = :userId', { userId })
+      .andWhere('(n.scheduledAt IS NULL OR n.scheduledAt <= :now)', { now });
+    if (query.type) builder.andWhere('n.type = :type', { type: query.type });
+    if (query.read === 'true') {
+      builder.andWhere('n.readAt IS NOT NULL');
+    } else if (query.read === 'false') {
+      builder.andWhere('n.readAt IS NULL');
+    }
+    builder.orderBy('n.createdAt', 'DESC');
+    const [items, total] = await builder
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+    const unreadCount = await this.unreadCount(userId);
     return { items, total, page, limit, unreadCount };
   }
 
   async unreadCount(userId: string): Promise<number> {
-    return this.notifications.count({
-      where: { userId, readAt: IsNull() },
-    });
+    return this.notifications
+      .createQueryBuilder('n')
+      .where('n.userId = :userId', { userId })
+      .andWhere('n.readAt IS NULL')
+      .andWhere('(n.scheduledAt IS NULL OR n.scheduledAt <= :now)', {
+        now: new Date(),
+      })
+      .getCount();
   }
 
   async markRead(

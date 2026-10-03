@@ -85,10 +85,11 @@ export class GuidesController {
   @Post()
   @RequirePermission('guides.manage')
   async create(
+    @CurrentUser() currentUser: { id: string },
     @Body() body: CreateGuideStepDto,
   ): Promise<ApiSuccessResponse<GuideStep>> {
     return success(
-      await this.guides.create(body),
+      await this.guides.create(currentUser.id, body),
       'Guide step created',
       HttpStatus.CREATED,
     );
@@ -97,16 +98,23 @@ export class GuidesController {
   @Patch(':id')
   @RequirePermission('guides.manage')
   async update(
+    @CurrentUser() currentUser: { id: string },
     @Param('id') id: string,
     @Body() body: UpdateGuideStepDto,
   ): Promise<ApiSuccessResponse<GuideStep>> {
-    return success(await this.guides.update(id, body), 'Guide step updated');
+    return success(
+      await this.guides.update(currentUser.id, id, body),
+      'Guide step updated',
+    );
   }
 
   @Delete(':id')
   @RequirePermission('guides.manage')
-  async remove(@Param('id') id: string): Promise<ApiSuccessResponse<null>> {
-    await this.guides.remove(id);
+  async remove(
+    @CurrentUser() currentUser: { id: string },
+    @Param('id') id: string,
+  ): Promise<ApiSuccessResponse<null>> {
+    await this.guides.remove(currentUser.id, id);
     return success(null, 'Guide step deleted');
   }
 }

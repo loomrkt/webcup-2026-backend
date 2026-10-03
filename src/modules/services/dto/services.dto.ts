@@ -1,13 +1,17 @@
 import {
   IsBoolean,
+  IsDateString,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { SERVICE_STATUSES } from '../entities/service.entity';
 
 export class CreateServiceDto {
   @IsString()
@@ -56,6 +60,25 @@ export class CreateServiceDto {
   @IsInt()
   @Min(0)
   featuredOrder?: number;
+
+  @IsOptional()
+  @IsIn(SERVICE_STATUSES, {
+    message: `status must be one of: ${SERVICE_STATUSES.join(', ')}`,
+  })
+  status?: (typeof SERVICE_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  statusMessage?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  resumeAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  alternativeServiceId?: string | null;
 }
 
 export class UpdateServiceDto {
@@ -106,4 +129,23 @@ export class UpdateServiceDto {
   @IsInt()
   @Min(0)
   featuredOrder?: number;
+
+  @IsOptional()
+  @IsIn(SERVICE_STATUSES, {
+    message: `status must be one of: ${SERVICE_STATUSES.join(', ')}`,
+  })
+  status?: (typeof SERVICE_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  statusMessage?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  resumeAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  alternativeServiceId?: string | null;
 }

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../rbac/decorators/require-permission.decorator';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard';
@@ -63,10 +64,11 @@ export class I18nController {
   @Post()
   @RequirePermission('i18n.manage')
   async upsert(
+    @CurrentUser() currentUser: { id: string },
     @Body() body: CreateTranslationDto,
   ): Promise<ApiSuccessResponse<Translation>> {
     return success(
-      await this.i18n.upsert(body),
+      await this.i18n.upsert(currentUser.id, body),
       'Translation saved',
       HttpStatus.CREATED,
     );
@@ -75,16 +77,23 @@ export class I18nController {
   @Patch(':id')
   @RequirePermission('i18n.manage')
   async update(
+    @CurrentUser() currentUser: { id: string },
     @Param('id') id: string,
     @Body() body: UpdateTranslationDto,
   ): Promise<ApiSuccessResponse<Translation>> {
-    return success(await this.i18n.update(id, body), 'Translation updated');
+    return success(
+      await this.i18n.update(currentUser.id, id, body),
+      'Translation updated',
+    );
   }
 
   @Delete(':id')
   @RequirePermission('i18n.manage')
-  async remove(@Param('id') id: string): Promise<ApiSuccessResponse<null>> {
-    await this.i18n.remove(id);
+  async remove(
+    @CurrentUser() currentUser: { id: string },
+    @Param('id') id: string,
+  ): Promise<ApiSuccessResponse<null>> {
+    await this.i18n.remove(currentUser.id, id);
     return success(null, 'Translation deleted');
   }
 }

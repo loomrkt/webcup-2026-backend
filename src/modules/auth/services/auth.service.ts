@@ -31,6 +31,11 @@ import { TooManyRequestsException } from '../../../common/rate-limit.guard';
 import { hashToken } from '../utils/token.util';
 import { MailService } from './mail.service';
 import { TokenService, TokenPair } from './token.service';
+import {
+  SecurityService,
+  type LoginContext,
+} from '../../security/security.service';
+import { AuditService } from '../../audit/audit.service';
 
 export type AuthUser = User &
   Partial<{
@@ -62,6 +67,8 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly tokenService: TokenService,
     private readonly mailService: MailService,
+    private readonly security: SecurityService,
+    private readonly audit: AuditService,
     @Optional()
     @Inject(TWO_FACTOR_SERVICE)
     private readonly twoFactor?: TwoFactorService | null,
@@ -139,7 +146,11 @@ export class AuthService {
     return ok ? toAuthUser(user) : null;
   }
 
-  async login(email: string, password: string): Promise<LoginResult> {
+  async login(
+    email: string,
+    password: string,
+    context: LoginContext = {},
+  ): Promise<LoginResult> {
     const key = email.toLowerCase().trim();
     if (this.loginLimiter.isLocked(key)) {
       throw new TooManyRequestsException(
@@ -149,6 +160,19 @@ export class AuthService {
     const user = await this.validateCredentials(email, password);
     if (!user) {
       this.loginLimiter.recordFailure(key);
+      const existing = await this.users.findOne({ where: { email: key } });
+      if (existing && !existing.deletedAt) {
+        const guard = await this.security.recordFailure(existing, context);
+        if (guard.locked) {
+          throw new TooManyRequestsException(
+            `Account temporarily locked after repeated failures. Try again in ${guard.retryAfterSec}s.`,
+          );
+        }
+      } else if (existing) {
+        await this.security.log('login_failed', key, context, {
+          reason: 'deleted_account',
+        });
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
     this.loginLimiter.reset(key);
@@ -158,6 +182,15 @@ export class AuthService {
     if (user.status === 'suspended') {
       throw new ForbiddenException(
         'This account is suspended. Contact the municipality for assistance.',
+      );
+    }
+    const guard = this.security.isLocked(user);
+    if (guard.locked) {
+      await this.security.log('login_locked', key, context, {
+        userId: user.id,
+      });
+      throw new TooManyRequestsException(
+        `Account temporarily locked. Try again in ${guard.retryAfterSec}s.`,
       );
     }
     if (
@@ -172,6 +205,7 @@ export class AuthService {
     if (this.enable2fa && this.twoFactor && this.twoFactor.isActive(user)) {
       return this.twoFactor.issuePendingLogin(user);
     }
+    await this.security.recordSuccess(user, context);
     return {
       requiresTwoFactor: false,
       ...(await this.tokenService.issueTokenPair(user)),
@@ -305,6 +339,9 @@ export class AuthService {
       reducedMotion?: boolean;
       readableFont?: boolean;
       lineSpacing?: string;
+      colorScheme?: string;
+      colorBlind?: string;
+      plainLanguage?: boolean;
     },
   ): Promise<AuthUser | null> {
     const user = await this.users.findOne({ where: { id: userId } });
@@ -318,6 +355,11 @@ export class AuthService {
     }
     if (dto.readableFont !== undefined) prefs.readableFont = dto.readableFont;
     if (dto.lineSpacing !== undefined) prefs.lineSpacing = dto.lineSpacing;
+    if (dto.colorScheme !== undefined) prefs.colorScheme = dto.colorScheme;
+    if (dto.colorBlind !== undefined) prefs.colorBlind = dto.colorBlind;
+    if (dto.plainLanguage !== undefined) {
+      prefs.plainLanguage = dto.plainLanguage;
+    }
     user.preferences = prefs;
     return toAuthUser(await this.users.save(user));
   }
@@ -370,7 +412,10 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(email: string): Promise<void> {
+  async forgotPassword(
+    email: string,
+    context: LoginContext = {},
+  ): Promise<void> {
     const user = await this.users.findOne({
       where: { email: email.toLowerCase().trim() },
     });
@@ -390,6 +435,9 @@ export class AuthService {
     } else {
       throw new BadRequestException('Email service not configured');
     }
+    await this.security.log('password_reset_requested', user.email, context, {
+      userId: user.id,
+    });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -405,5 +453,11 @@ export class AuthService {
     user.passwordHash = await hash(newPassword, BCRYPT_ROUNDS);
     await this.users.save(user);
     await this.resetTokens.update({ id: record.id }, { usedAt: new Date() });
+    await this.security.log(
+      'password_reset',
+      user.email,
+      {},
+      { userId: user.id },
+    );
   }
 }

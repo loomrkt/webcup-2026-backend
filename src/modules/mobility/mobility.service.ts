@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Service } from '../services/entities/service.entity';
+import { AuditService } from '../audit/audit.service';
 import {
   CreateMobilityLineDto,
   CreateScheduleDto,
@@ -226,6 +227,7 @@ export class MobilityService implements OnModuleInit {
     @InjectRepository(Service)
     private readonly services: Repository<Service>,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -354,14 +356,17 @@ export class MobilityService implements OnModuleInit {
     );
   }
 
-  async create(dto: CreateMobilityLineDto): Promise<MobilityLine> {
+  async create(
+    actorId: string,
+    dto: CreateMobilityLineDto,
+  ): Promise<MobilityLine> {
     const existing = await this.lines.findOne({
       where: { code: dto.code.toUpperCase() },
     });
     if (existing) {
       throw new ConflictException(`Line code "${dto.code}" already exists`);
     }
-    return this.lines.save(
+    const line = await this.lines.save(
       this.lines.create({
         name: dto.name.trim(),
         code: dto.code.toUpperCase(),
@@ -375,9 +380,21 @@ export class MobilityService implements OnModuleInit {
         active: dto.active ?? true,
       }),
     );
+    await this.audit.log({
+      actorId,
+      action: 'create',
+      entityType: 'mobility_line',
+      entityId: line.id,
+      summary: `Création de la ligne ${line.code} « ${line.name} »`,
+    });
+    return line;
   }
 
-  async update(id: string, dto: UpdateMobilityLineDto): Promise<MobilityLine> {
+  async update(
+    actorId: string,
+    id: string,
+    dto: UpdateMobilityLineDto,
+  ): Promise<MobilityLine> {
     const line = await this.lines.findOne({ where: { id } });
     if (!line) throw new NotFoundException('Mobility line not found');
     if (dto.name !== undefined) line.name = dto.name.trim();
@@ -399,13 +416,28 @@ export class MobilityService implements OnModuleInit {
     if (dto.frequency !== undefined) line.frequency = dto.frequency ?? null;
     if (dto.accessible !== undefined) line.accessible = dto.accessible;
     if (dto.active !== undefined) line.active = dto.active;
-    return this.lines.save(line);
+    const saved = await this.lines.save(line);
+    await this.audit.log({
+      actorId,
+      action: 'update',
+      entityType: 'mobility_line',
+      entityId: saved.id,
+      summary: `Modification de la ligne ${saved.code} « ${saved.name} »`,
+    });
+    return saved;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(actorId: string, id: string): Promise<void> {
     const line = await this.lines.findOne({ where: { id } });
     if (!line) throw new NotFoundException('Mobility line not found');
     await this.lines.delete({ id });
+    await this.audit.log({
+      actorId,
+      action: 'delete',
+      entityType: 'mobility_line',
+      entityId: id,
+      summary: `Suppression de la ligne ${line.code} « ${line.name} »`,
+    });
   }
 
   async addSchedule(

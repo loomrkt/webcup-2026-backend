@@ -686,6 +686,8 @@ export class RbacService {
           'notifications.read',
           'notifications.update',
           'guides.read',
+          'appointments.read',
+          'appointments.create',
         ],
       },
       {
@@ -721,6 +723,11 @@ export class RbacService {
           'mobility.create',
           'mobility.update',
           'mobility.delete',
+          'security.read',
+          'appointments.manage',
+          'places.manage',
+          'glossary.manage',
+          'audit.read',
         ],
       },
     ];
