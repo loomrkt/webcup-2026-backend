@@ -36,6 +36,9 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   city: string | null;
 
+  @Column({ name: 'birth_date', type: 'date', nullable: true })
+  birthDate: string | null;
+
   @Column({ name: 'password_hash', type: 'varchar', nullable: true })
   passwordHash: string | null;
 
@@ -54,6 +57,18 @@ export class User {
   @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
   emailVerifiedAt: Date | null;
   // @purge:verif-end
+
+  @Column({ type: 'varchar', length: 10, default: 'fr' })
+  language: string;
+
+  @Column({ type: 'json', nullable: true })
+  preferences: Record<string, unknown> | null;
+
+  @Column({ type: 'json', nullable: true })
+  onboarding: Record<string, unknown> | null;
+
+  @Column({ name: 'notification_prefs', type: 'json', nullable: true })
+  notificationPrefs: Record<string, unknown> | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

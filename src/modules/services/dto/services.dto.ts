@@ -47,6 +47,15 @@ export class CreateServiceDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  featuredOrder?: number;
 }
 
 export class UpdateServiceDto {
@@ -88,4 +97,13 @@ export class UpdateServiceDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  featuredOrder?: number;
 }

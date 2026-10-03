@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import type { ApiSuccessResponse } from '../../common/api-response';
@@ -24,8 +25,50 @@ export class ServicesController {
 
   @Get()
   @Public()
-  async list(): Promise<ApiSuccessResponse<Service[]>> {
-    return success(await this.services.listPublic(), 'Services fetched');
+  async list(
+    @Query('locale') locale?: string,
+  ): Promise<ApiSuccessResponse<Service[]>> {
+    return success(await this.services.listPublic(locale), 'Services fetched');
+  }
+
+  @Get('featured')
+  @Public()
+  async featured(
+    @Query('locale') locale?: string,
+  ): Promise<ApiSuccessResponse<Service[]>> {
+    return success(
+      await this.services.listFeatured(locale),
+      'Featured services fetched',
+    );
+  }
+
+  @Get('popular')
+  @Public()
+  async popular(
+    @Query('limit') limit?: string,
+    @Query('locale') locale?: string,
+  ): Promise<ApiSuccessResponse<Service[]>> {
+    const parsed = limit ? Number(limit) : 10;
+    const safe = Number.isInteger(parsed) ? parsed : 10;
+    return success(
+      await this.services.listPopular(safe, locale),
+      'Popular services fetched',
+    );
+  }
+
+  @Get('search')
+  @Public()
+  async search(
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+    @Query('locale') locale?: string,
+  ): Promise<ApiSuccessResponse<unknown>> {
+    const parsed = limit ? Number(limit) : 10;
+    const safe = Number.isInteger(parsed) ? parsed : 10;
+    return success(
+      await this.services.search(q?.trim() ?? '', safe, locale),
+      'Services searched',
+    );
   }
 
   @Get('admin/all')
@@ -36,8 +79,14 @@ export class ServicesController {
 
   @Get(':id')
   @Public()
-  async get(@Param('id') id: string): Promise<ApiSuccessResponse<Service>> {
-    return success(await this.services.getPublic(id), 'Service fetched');
+  async get(
+    @Param('id') id: string,
+    @Query('locale') locale?: string,
+  ): Promise<ApiSuccessResponse<Service>> {
+    return success(
+      await this.services.getPublic(id, locale),
+      'Service fetched',
+    );
   }
 
   @Post()

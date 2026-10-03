@@ -34,6 +34,12 @@ export class Service {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  featured: boolean;
+
+  @Column({ name: 'featured_order', type: 'int', default: 0 })
+  featuredOrder: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

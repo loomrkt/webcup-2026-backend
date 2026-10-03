@@ -11,6 +11,8 @@ import { NewsModule } from './modules/news/news.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { RequestsModule } from './modules/requests/requests.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { I18nModule } from './modules/i18n/i18n.module';
+import { CommunicationsModule } from './modules/communications/communications.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     ContactModule,
     RequestsModule,
     DashboardModule,
+    I18nModule,
+    CommunicationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

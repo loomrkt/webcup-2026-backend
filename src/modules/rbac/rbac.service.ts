@@ -680,7 +680,12 @@ export class RbacService {
       {
         name: 'citoyen',
         description: 'Citizen — standard platform user',
-        permissions: ['requests.create', 'requests.read'],
+        permissions: [
+          'requests.create',
+          'requests.read',
+          'notifications.read',
+          'notifications.update',
+        ],
       },
       {
         name: 'agent_municipal',
@@ -694,6 +699,18 @@ export class RbacService {
           'requests.update',
           'dashboard.read',
           'nova-terra.read',
+          'i18n.read',
+          'i18n.manage',
+          'announcements.read',
+          'announcements.create',
+          'announcements.update',
+          'announcements.delete',
+          'alerts.read',
+          'alerts.create',
+          'alerts.update',
+          'alerts.delete',
+          'notifications.read',
+          'notifications.update',
         ],
       },
     ];

@@ -31,4 +31,34 @@ export const MODULE_PERMISSIONS = [
   { name: 'requests.update', description: 'Update citizen requests' },
   { name: 'dashboard.read', description: 'Read platform dashboard statistics' },
   { name: 'nova-terra.read', description: 'Read data from the Nova Terra API' },
+  { name: 'i18n.read', description: 'List/read translations' },
+  { name: 'i18n.manage', description: 'Create/update/delete translations' },
+  {
+    name: 'announcements.read',
+    description: 'List/read announcements',
+  },
+  {
+    name: 'announcements.create',
+    description: 'Create announcements',
+  },
+  {
+    name: 'announcements.update',
+    description: 'Update/publish announcements',
+  },
+  {
+    name: 'announcements.delete',
+    description: 'Delete announcements',
+  },
+  { name: 'alerts.read', description: 'List/read alerts' },
+  { name: 'alerts.create', description: 'Create alerts (incl. AI drafts)' },
+  { name: 'alerts.update', description: 'Update/diffuse/resolve alerts' },
+  { name: 'alerts.delete', description: 'Delete alerts' },
+  {
+    name: 'notifications.read',
+    description: 'Read own notifications and preferences',
+  },
+  {
+    name: 'notifications.update',
+    description: 'Mark notifications read/unread, update preferences',
+  },
 ];

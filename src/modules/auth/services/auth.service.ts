@@ -257,6 +257,12 @@ export class AuthService {
         address: user.address,
         city: user.city,
       },
+      language: user.language ?? 'fr',
+      preferences: user.preferences ?? {},
+      onboarding: user.onboarding ?? {
+        status: 'not_started',
+        completedSteps: [],
+      },
       roles,
       permissions,
     };
@@ -280,6 +286,80 @@ export class AuthService {
     if (dto.address !== undefined) user.address = dto.address ?? null;
     if (dto.city !== undefined) user.city = dto.city ?? null;
     return toAuthUser(await this.users.save(user));
+  }
+
+  async updatePreferences(
+    userId: string,
+    dto: {
+      language?: string;
+      textSize?: string;
+      highContrast?: boolean;
+      reducedMotion?: boolean;
+      readableFont?: boolean;
+      lineSpacing?: string;
+    },
+  ): Promise<AuthUser | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (dto.language !== undefined) user.language = dto.language;
+    const prefs = { ...(user.preferences ?? {}) };
+    if (dto.textSize !== undefined) prefs.textSize = dto.textSize;
+    if (dto.highContrast !== undefined) prefs.highContrast = dto.highContrast;
+    if (dto.reducedMotion !== undefined) {
+      prefs.reducedMotion = dto.reducedMotion;
+    }
+    if (dto.readableFont !== undefined) prefs.readableFont = dto.readableFont;
+    if (dto.lineSpacing !== undefined) prefs.lineSpacing = dto.lineSpacing;
+    user.preferences = prefs;
+    return toAuthUser(await this.users.save(user));
+  }
+
+  async getOnboarding(userId: string): Promise<Record<string, unknown> | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    return user.onboarding ?? { status: 'not_started', completedSteps: [] };
+  }
+
+  async updateOnboarding(
+    userId: string,
+    dto: {
+      status?: 'not_started' | 'in_progress' | 'completed';
+      completedSteps?: string[];
+    },
+  ): Promise<Record<string, unknown> | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const onboarding = {
+      status: 'not_started',
+      completedSteps: [] as string[],
+      ...(user.onboarding ?? {}),
+    };
+    if (dto.status !== undefined) onboarding.status = dto.status;
+    if (dto.completedSteps !== undefined) {
+      onboarding.completedSteps = [...new Set(dto.completedSteps)];
+    }
+    user.onboarding = onboarding;
+    await this.users.save(user);
+    return onboarding;
+  }
+
+  async profileCompletion(userId: string) {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const fields = [
+      { key: 'firstName', filled: !!user.firstName },
+      { key: 'lastName', filled: !!user.lastName },
+      { key: 'phone', filled: !!user.phone },
+      { key: 'address', filled: !!user.address },
+      { key: 'city', filled: !!user.city },
+      { key: 'emailVerified', filled: !!user.emailVerifiedAt },
+    ];
+    const filled = fields.filter((f) => f.filled).length;
+    return {
+      percentage: Math.round((filled / fields.length) * 100),
+      missing: fields.filter((f) => !f.filled).map((f) => f.key),
+      complete: filled === fields.length,
+    };
   }
 
   async forgotPassword(email: string): Promise<void> {

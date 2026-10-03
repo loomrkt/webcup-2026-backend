@@ -10,6 +10,7 @@ import {
 } from './dto/misc.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/profile.dto';
+import { UpdateOnboardingDto, UpdatePreferencesDto } from './dto/profile.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService, LoginResult } from './services/auth.service';
@@ -92,6 +93,56 @@ export class AuthController {
         },
       },
       'Profile updated',
+    );
+  }
+
+  @Patch('me/preferences')
+  @UseGuards(JwtAuthGuard)
+  async updatePreferences(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body: UpdatePreferencesDto,
+  ): Promise<ApiSuccessResponse<unknown>> {
+    const user = await this.authService.updatePreferences(currentUser.id, body);
+    return success(
+      {
+        language: user?.language ?? 'fr',
+        preferences: user?.preferences ?? {},
+      },
+      'Preferences updated',
+    );
+  }
+
+  @Get('me/onboarding')
+  @UseGuards(JwtAuthGuard)
+  async getOnboarding(
+    @CurrentUser() currentUser: { id: string },
+  ): Promise<ApiSuccessResponse<unknown>> {
+    return success(
+      await this.authService.getOnboarding(currentUser.id),
+      'Onboarding state fetched',
+    );
+  }
+
+  @Patch('me/onboarding')
+  @UseGuards(JwtAuthGuard)
+  async updateOnboarding(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body: UpdateOnboardingDto,
+  ): Promise<ApiSuccessResponse<unknown>> {
+    return success(
+      await this.authService.updateOnboarding(currentUser.id, body),
+      'Onboarding state updated',
+    );
+  }
+
+  @Get('me/profile-completion')
+  @UseGuards(JwtAuthGuard)
+  async profileCompletion(
+    @CurrentUser() currentUser: { id: string },
+  ): Promise<ApiSuccessResponse<unknown>> {
+    return success(
+      await this.authService.profileCompletion(currentUser.id),
+      'Profile completion fetched',
     );
   }
 
