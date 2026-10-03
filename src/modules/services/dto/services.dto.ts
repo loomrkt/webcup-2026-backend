@@ -13,6 +13,25 @@ import {
 } from 'class-validator';
 import { SERVICE_STATUSES } from '../entities/service.entity';
 
+/** F63 — activation/désactivation rapide d'un service par un administrateur. */
+export class SetServiceAvailabilityDto {
+  @IsBoolean()
+  available: boolean;
+
+  /** Statut à appliquer (par défaut : incident si désactivé, available si activé). */
+  @IsOptional()
+  @IsIn(SERVICE_STATUSES, {
+    message: `status must be one of: ${SERVICE_STATUSES.join(', ')}`,
+  })
+  status?: (typeof SERVICE_STATUSES)[number];
+
+  /** Motif de l'indisponibilité, visible par les habitants. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  reason?: string | null;
+}
+
 export class CreateServiceDto {
   @IsString()
   @MinLength(2)

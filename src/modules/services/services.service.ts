@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -10,8 +11,13 @@ import { Alert } from '../communications/entities/alert.entity';
 import { I18nService } from '../i18n/i18n.service';
 import { AuditService } from '../audit/audit.service';
 import { Request } from '../requests/entities/request.entity';
-import { CreateServiceDto, UpdateServiceDto } from './dto/services.dto';
+import {
+  CreateServiceDto,
+  SetServiceAvailabilityDto,
+  UpdateServiceDto,
+} from './dto/services.dto';
 import { Service } from './entities/service.entity';
+import { ServiceStatusHistory } from './entities/service-status-history.entity';
 
 const LOCALIZED_FIELDS = ['name', 'description'];
 
@@ -32,17 +38,76 @@ function normalizeText(text: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+/** F64 — état lisible par l'habitant : opérationnel / perturbé / indisponible. */
+function availabilityOf(service: Service): {
+  code: 'operational' | 'degraded' | 'unavailable';
+  label: string;
+  nextAction: string;
+} {
+  const unavailable = !service.active || service.status === 'incident';
+  const degraded = service.status === 'maintenance';
+  if (unavailable) {
+    return {
+      code: 'unavailable',
+      label: 'Indisponible',
+      nextAction: service.alternativeServiceId
+        ? 'Ce service est temporairement indisponible. Un service alternatif est proposé ci-dessous.'
+        : 'Ce service est temporairement indisponible. Réessayez plus tard ou contactez la mairie.',
+    };
+  }
+  if (degraded) {
+    return {
+      code: 'degraded',
+      label: 'Perturbé',
+      nextAction:
+        'Le service est ralenti ou partiellement accessible. Vous pouvez tout de même effectuer votre démarche.',
+    };
+  }
+  return {
+    code: 'operational',
+    label: 'Opérationnel',
+    nextAction: 'Vous pouvez effectuer votre démarche en ligne.',
+  };
+}
+
+/** Champs réduits en mode léger (F62). */
+const LIGHT_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  icon: true,
+  category: true,
+  status: true,
+  active: true,
+} as const;
+
 @Injectable()
 export class ServicesService {
+  private readonly logger = new Logger(ServicesService.name);
+
   constructor(
     @InjectRepository(Service)
     private readonly services: Repository<Service>,
     @InjectRepository(Request)
     private readonly requests: Repository<Request>,
+    @InjectRepository(ServiceStatusHistory)
+    private readonly statusHistory: Repository<ServiceStatusHistory>,
     private readonly i18n: I18nService,
     private readonly communications: CommunicationsService,
     private readonly audit: AuditService,
   ) {}
+
+  private attachAvailability(
+    service: Service,
+  ): Service & { availability: ReturnType<typeof availabilityOf> } {
+    return { ...service, availability: availabilityOf(service) };
+  }
+
+  private attachAvailabilityMany(
+    services: Service[],
+  ): Array<Service & { availability: ReturnType<typeof availabilityOf> }> {
+    return services.map((s) => this.attachAvailability(s));
+  }
 
   private async attachTranslations(
     service: Service,
@@ -67,15 +132,16 @@ export class ServicesService {
     return Promise.all(services.map((s) => this.attachTranslations(s, locale)));
   }
 
-  async listPublic(
-    locale?: string,
-  ): Promise<Array<Service & { translations: Record<string, string> }>> {
+  async listPublic(locale?: string, light = false): Promise<Service[]> {
     const services = await this.services.find({
       where: { active: true },
       relations: { alternativeService: true },
+      select: light ? LIGHT_SELECT : undefined,
       order: { order: 'ASC', name: 'ASC' },
     });
-    return this.attachTranslationsMany(services, locale);
+    if (light) return services;
+    const withAvailability = this.attachAvailabilityMany(services);
+    return this.attachTranslationsMany(withAvailability, locale);
   }
 
   /** Vue d'ensemble du Service Status Center (F38). */
@@ -89,8 +155,12 @@ export class ServicesService {
       healthy: await this.services.count({
         where: { status: 'available', active: true },
       }),
-      maintenance: impacted.filter((s) => s.status === 'maintenance'),
-      incident: impacted.filter((s) => s.status === 'incident'),
+      maintenance: this.attachAvailabilityMany(
+        impacted.filter((s) => s.status === 'maintenance'),
+      ),
+      incident: this.attachAvailabilityMany(
+        impacted.filter((s) => s.status === 'incident'),
+      ),
     };
   }
 
@@ -100,25 +170,31 @@ export class ServicesService {
   ): Promise<Service & { translations: Record<string, string> }> {
     const service = await this.services.findOne({
       where: { id, active: true },
+      relations: { alternativeService: true },
     });
     if (!service) throw new NotFoundException('Service not found');
-    return this.attachTranslations(service, locale);
+    const withAvailability = this.attachAvailability(service);
+    return this.attachTranslations(withAvailability, locale);
   }
 
-  async listFeatured(
-    locale?: string,
-  ): Promise<Array<Service & { translations: Record<string, string> }>> {
+  async listFeatured(locale?: string, light = false): Promise<Service[]> {
     const services = await this.services.find({
       where: { active: true, featured: true },
+      select: light ? LIGHT_SELECT : undefined,
       order: { featuredOrder: 'ASC', name: 'ASC' },
     });
-    return this.attachTranslationsMany(services, locale);
+    if (light) return services;
+    return this.attachTranslationsMany(
+      this.attachAvailabilityMany(services),
+      locale,
+    );
   }
 
   async listPopular(
     limit: number,
     locale?: string,
-  ): Promise<Array<Service & { translations: Record<string, string> }>> {
+    light = false,
+  ): Promise<Service[]> {
     const rows = await this.services
       .createQueryBuilder('service')
       .leftJoin(
@@ -134,7 +210,15 @@ export class ServicesService {
       .addOrderBy('service.order', 'ASC')
       .limit(Math.max(1, Math.min(limit, 50)))
       .getRawAndEntities();
-    return this.attachTranslationsMany(rows.entities, locale);
+    if (light) {
+      return rows.entities.map((e) =>
+        Object.fromEntries(Object.keys(LIGHT_SELECT).map((k) => [k, e[k]])),
+      ) as Service[];
+    }
+    return this.attachTranslationsMany(
+      this.attachAvailabilityMany(rows.entities),
+      locale,
+    );
   }
 
   async listAll(): Promise<Service[]> {
@@ -172,7 +256,10 @@ export class ServicesService {
       .sort((a, b) => a.score - b.score || a.service.order - b.service.order)
       .slice(0, Math.max(1, Math.min(limit, 50)))
       .map((entry) => entry.service);
-    const items = await this.attachTranslationsMany(scored, locale);
+    const items = await this.attachTranslationsMany(
+      this.attachAvailabilityMany(scored),
+      locale,
+    );
     const attention = await this.communications.listActiveAlerts();
     return { items, attention };
   }
@@ -242,15 +329,85 @@ export class ServicesService {
     if (dto.alternativeServiceId !== undefined) {
       service.alternativeServiceId = dto.alternativeServiceId ?? null;
     }
+    const statusChanged =
+      (dto.status !== undefined && dto.status !== service.status) ||
+      (dto.active !== undefined && dto.active !== service.active);
     const saved = await this.services.save(service);
+    if (statusChanged) {
+      await this.recordStatusChange(saved, null, dto.statusMessage ?? null);
+    }
     await this.audit.log({
       action: 'update',
       entityType: 'service',
       entityId: saved.id,
       summary: `Modification du service « ${saved.name} » (statut : ${saved.status})`,
-      after: { name: saved.name, status: saved.status },
+      after: { name: saved.name, status: saved.status, active: saved.active },
     });
     return saved;
+  }
+
+  /**
+   * F63 — désactivation/réactivation rapide d'un service par un administrateur,
+   * avec motif obligatoire et journalisation.
+   */
+  async setAvailability(
+    actorId: string,
+    id: string,
+    dto: SetServiceAvailabilityDto,
+  ): Promise<Service> {
+    const service = await this.services.findOne({ where: { id } });
+    if (!service) throw new NotFoundException('Service not found');
+    service.active = dto.available;
+    service.status = dto.status ?? (dto.available ? 'available' : 'incident');
+    service.statusMessage = dto.reason?.trim() ? dto.reason.trim() : null;
+    if (dto.available && service.status === 'available') {
+      service.resumeAt = null;
+    }
+    const saved = await this.services.save(service);
+    await this.recordStatusChange(saved, actorId, service.statusMessage);
+    await this.audit.log({
+      actorId,
+      action: dto.available ? 'enable' : 'disable',
+      entityType: 'service',
+      entityId: saved.id,
+      summary: `${dto.available ? 'Activation' : 'Désactivation'} du service « ${saved.name} » (statut : ${saved.status})${service.statusMessage ? ` — motif : ${service.statusMessage}` : ''}`,
+      after: { active: saved.active, status: saved.status },
+    });
+    return saved;
+  }
+
+  /** Journal des changements d'état d'un service (F63). */
+  async getStatusHistory(id: string): Promise<ServiceStatusHistory[]> {
+    const service = await this.services.findOne({ where: { id } });
+    if (!service) throw new NotFoundException('Service not found');
+    return this.statusHistory.find({
+      where: { serviceId: id },
+      relations: { changedBy: true },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
+  }
+
+  private async recordStatusChange(
+    service: Service,
+    changedById: string | null,
+    reason: string | null,
+  ): Promise<void> {
+    try {
+      await this.statusHistory.save(
+        this.statusHistory.create({
+          serviceId: service.id,
+          active: service.active,
+          status: service.status,
+          reason: reason ?? null,
+          changedById,
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record status change for service ${service.id}: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
   }
 
   async delete(id: string): Promise<void> {

@@ -89,9 +89,21 @@ export class CommunicationsService {
     return announcement;
   }
 
-  async listPublicAnnouncements(): Promise<Announcement[]> {
+  async listPublicAnnouncements(light = false): Promise<Announcement[]> {
     const announcements = await this.announcements.find({
       where: { status: 'published' },
+      select: light
+        ? {
+            id: true,
+            title: true,
+            priority: true,
+            zone: true,
+            startsAt: true,
+            endsAt: true,
+            ctaLabel: true,
+            ctaUrl: true,
+          }
+        : undefined,
       order: { publishedAt: 'DESC' },
     });
     const now = new Date();
@@ -217,11 +229,22 @@ export class CommunicationsService {
     return alert;
   }
 
-  async listActiveAlerts(zone?: string): Promise<Alert[]> {
+  async listActiveAlerts(zone?: string, light = false): Promise<Alert[]> {
     const where: Record<string, unknown> = { status: 'active' };
     if (zone) where.zone = zone;
     const alerts = await this.alerts.find({
       where,
+      select: light
+        ? {
+            id: true,
+            title: true,
+            message: true,
+            criticality: true,
+            zone: true,
+            endsAt: true,
+            publishedAt: true,
+          }
+        : undefined,
       order: { publishedAt: 'DESC' },
     });
     const now = new Date();

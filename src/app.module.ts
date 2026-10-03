@@ -23,6 +23,7 @@ import { PlacesModule } from './modules/places/places.module';
 import { GlossaryModule } from './modules/glossary/glossary.module';
 import { ParticipationModule } from './modules/participation/participation.module';
 import { PrivacyModule } from './modules/privacy/privacy.module';
+import { CivicModule } from './modules/civic/civic.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { PrivacyModule } from './modules/privacy/privacy.module';
     GlossaryModule,
     ParticipationModule,
     PrivacyModule,
+    CivicModule,
   ],
   controllers: [AppController],
   providers: [AppService],

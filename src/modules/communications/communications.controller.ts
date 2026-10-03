@@ -43,9 +43,12 @@ export class AnnouncementsController {
 
   @Get()
   @Public()
-  async list(): Promise<ApiSuccessResponse<Announcement[]>> {
+  async list(
+    @Query('light') light?: string,
+  ): Promise<ApiSuccessResponse<Announcement[]>> {
+    const reduced = light === '1' || light === 'true';
     return success(
-      await this.communications.listPublicAnnouncements(),
+      await this.communications.listPublicAnnouncements(reduced),
       'Announcements fetched',
     );
   }
@@ -112,9 +115,11 @@ export class AlertsController {
   @Public()
   async active(
     @Query('zone') zone?: string,
+    @Query('light') light?: string,
   ): Promise<ApiSuccessResponse<Alert[]>> {
+    const reduced = light === '1' || light === 'true';
     return success(
-      await this.communications.listActiveAlerts(zone),
+      await this.communications.listActiveAlerts(zone, reduced),
       'Active alerts fetched',
     );
   }

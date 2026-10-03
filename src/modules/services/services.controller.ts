@@ -11,12 +11,22 @@ import {
 } from '@nestjs/common';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../rbac/decorators/require-permission.decorator';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard';
-import { CreateServiceDto, UpdateServiceDto } from './dto/services.dto';
+import {
+  CreateServiceDto,
+  SetServiceAvailabilityDto,
+  UpdateServiceDto,
+} from './dto/services.dto';
 import { Service } from './entities/service.entity';
+import { ServiceStatusHistory } from './entities/service-status-history.entity';
 import { ServicesService } from './services.service';
+
+function toBool(value?: string): boolean {
+  return value === '1' || value === 'true';
+}
 
 @Controller('services')
 @UseGuards(PermissionsGuard)
@@ -27,17 +37,22 @@ export class ServicesController {
   @Public()
   async list(
     @Query('locale') locale?: string,
+    @Query('light') light?: string,
   ): Promise<ApiSuccessResponse<Service[]>> {
-    return success(await this.services.listPublic(locale), 'Services fetched');
+    return success(
+      await this.services.listPublic(locale, toBool(light)),
+      'Services fetched',
+    );
   }
 
   @Get('featured')
   @Public()
   async featured(
     @Query('locale') locale?: string,
+    @Query('light') light?: string,
   ): Promise<ApiSuccessResponse<Service[]>> {
     return success(
-      await this.services.listFeatured(locale),
+      await this.services.listFeatured(locale, toBool(light)),
       'Featured services fetched',
     );
   }
@@ -47,11 +62,12 @@ export class ServicesController {
   async popular(
     @Query('limit') limit?: string,
     @Query('locale') locale?: string,
+    @Query('light') light?: string,
   ): Promise<ApiSuccessResponse<Service[]>> {
     const parsed = limit ? Number(limit) : 10;
     const safe = Number.isInteger(parsed) ? parsed : 10;
     return success(
-      await this.services.listPopular(safe, locale),
+      await this.services.listPopular(safe, locale, toBool(light)),
       'Popular services fetched',
     );
   }
@@ -113,6 +129,30 @@ export class ServicesController {
     @Body() body: UpdateServiceDto,
   ): Promise<ApiSuccessResponse<Service>> {
     return success(await this.services.update(id, body), 'Service updated');
+  }
+
+  @Post(':id/availability')
+  @RequirePermission('services.update')
+  async setAvailability(
+    @CurrentUser() currentUser: { id: string },
+    @Param('id') id: string,
+    @Body() body: SetServiceAvailabilityDto,
+  ): Promise<ApiSuccessResponse<Service>> {
+    return success(
+      await this.services.setAvailability(currentUser.id, id, body),
+      body.available ? 'Service enabled' : 'Service disabled',
+    );
+  }
+
+  @Get(':id/status-history')
+  @RequirePermission('services.read')
+  async statusHistory(
+    @Param('id') id: string,
+  ): Promise<ApiSuccessResponse<ServiceStatusHistory[]>> {
+    return success(
+      await this.services.getStatusHistory(id),
+      'Service status history fetched',
+    );
   }
 
   @Delete(':id')

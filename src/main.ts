@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 
@@ -26,6 +27,15 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
 
   app.setGlobalPrefix('api');
+
+  // F61 — performances : laisse les navigateurs et caches intermédiaires
+  // mettre en cache les GET publics (réponses identiques pour tous).
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET' && !req.headers.authorization) {
+      res.setHeader('Cache-Control', 'public, max-age=60');
+    }
+    next();
+  });
 
   const config = new DocumentBuilder()
     .setTitle('Generated API')

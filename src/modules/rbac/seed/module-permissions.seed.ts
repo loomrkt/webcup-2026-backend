@@ -46,6 +46,36 @@ export const MODULE_PERMISSIONS = [
     name: 'privacy.export',
     description: 'Export own personal data (GDPR access right)',
   },
+  {
+    name: 'projects.manage',
+    description: 'Create/update/delete city projects',
+  },
+  {
+    name: 'consultations.manage',
+    description: 'Create/update/delete citizen consultations',
+  },
+  {
+    name: 'consultations.respond',
+    description: 'Respond to an open citizen consultation',
+  },
+  {
+    name: 'feedback.read',
+    description: 'Read project feedback (own, or all for agents)',
+  },
+  {
+    name: 'feedback.create',
+    description: 'Submit feedback on a city project',
+  },
+  {
+    name: 'feedback.manage',
+    description: 'Manage project feedback (agents)',
+  },
+  {
+    name: 'ideas.read',
+    description: 'Read citizen ideas (own, or all for agents)',
+  },
+  { name: 'ideas.create', description: 'Propose a citizen idea' },
+  { name: 'ideas.manage', description: 'Manage citizen ideas (agents)' },
   { name: 'dashboard.read', description: 'Read platform dashboard statistics' },
   { name: 'nova-terra.read', description: 'Read data from the Nova Terra API' },
   { name: 'i18n.read', description: 'List/read translations' },
