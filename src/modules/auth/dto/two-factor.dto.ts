@@ -20,6 +20,14 @@ export class VerifyTwoFactorDto {
   pendingToken: string;
 }
 
+export class RecoverTwoFactorDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  pendingToken: string;
+}
+
 export class SendEmailMfaCodeDto {
   @IsString()
   pendingToken: string;

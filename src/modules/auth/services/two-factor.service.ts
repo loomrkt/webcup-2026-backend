@@ -321,4 +321,37 @@ export class TwoFactorService {
     this.verifyLimiter.recordFailure(userId);
     return null;
   }
+
+  /**
+   * F53 — finalise la connexion avec un code de récupération (B1).
+   * Résout l'utilisateur depuis le pendingToken puis délègue à verifyRecoveryCode.
+   */
+  async verifyRecovery(
+    pendingToken: string,
+    code: string,
+    context: LoginContext = {},
+  ): Promise<LoginResult> {
+    if (!this.enabled) {
+      throw new BadRequestException('Two-factor authentication is disabled');
+    }
+    const pending = this.tokenService.verifyPending2faToken(pendingToken);
+    const user = await this.users.findOne({ where: { id: pending.sub } });
+    if (!user || !this.isActive(user)) {
+      throw new UnauthorizedException('Two-factor not set up for this account');
+    }
+    const result = await this.verifyRecoveryCode(user.id, code);
+    if (!result) {
+      await this.security.log('two_factor_failed', user.email, context, {
+        userId: user.id,
+        reason: 'recovery',
+      });
+      throw new UnauthorizedException('Invalid recovery code');
+    }
+    await this.security.recordSuccess(user, context);
+    await this.security.log('two_factor_verified', user.email, context, {
+      userId: user.id,
+      via: 'recovery',
+    });
+    return result;
+  }
 }
