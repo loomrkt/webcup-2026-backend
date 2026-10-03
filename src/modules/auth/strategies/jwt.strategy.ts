@@ -34,6 +34,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Account has been deleted');
+    }
+    if (user.status === 'suspended') {
+      throw new UnauthorizedException('Account is suspended');
+    }
     return { id: user.id, email: user.email };
   }
 }

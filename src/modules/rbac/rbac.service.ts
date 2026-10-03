@@ -685,6 +685,7 @@ export class RbacService {
           'requests.read',
           'notifications.read',
           'notifications.update',
+          'guides.read',
         ],
       },
       {
@@ -711,6 +712,15 @@ export class RbacService {
           'alerts.delete',
           'notifications.read',
           'notifications.update',
+          'accounts.read',
+          'accounts.update',
+          'accounts.delete',
+          'guides.read',
+          'guides.manage',
+          'mobility.read',
+          'mobility.create',
+          'mobility.update',
+          'mobility.delete',
         ],
       },
     ];

@@ -13,6 +13,9 @@ import { RequestsModule } from './modules/requests/requests.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { I18nModule } from './modules/i18n/i18n.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
+import { GuidesModule } from './modules/guides/guides.module';
+import { MobilityModule } from './modules/mobility/mobility.module';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { CommunicationsModule } from './modules/communications/communications.mo
     DashboardModule,
     I18nModule,
     CommunicationsModule,
+    AccountsModule,
+    GuidesModule,
+    MobilityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

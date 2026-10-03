@@ -61,4 +61,25 @@ export const MODULE_PERMISSIONS = [
     name: 'notifications.update',
     description: 'Mark notifications read/unread, update preferences',
   },
+  { name: 'accounts.read', description: 'List/read citizen accounts' },
+  { name: 'accounts.update', description: 'Update citizen account status' },
+  { name: 'accounts.delete', description: 'Delete citizen accounts' },
+  { name: 'guides.read', description: 'Read guide steps and own progress' },
+  { name: 'guides.manage', description: 'Create/update/delete guide steps' },
+  {
+    name: 'mobility.read',
+    description: 'List/read mobility lines and schedules',
+  },
+  {
+    name: 'mobility.create',
+    description: 'Create mobility lines and schedules',
+  },
+  {
+    name: 'mobility.update',
+    description: 'Update mobility lines and schedules',
+  },
+  {
+    name: 'mobility.delete',
+    description: 'Delete mobility lines and schedules',
+  },
 ];

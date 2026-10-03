@@ -36,6 +36,7 @@ import { TotpService } from './services/totp.service';
 import { TwoFactorService } from './services/two-factor.service';
 
 import { VerificationService } from './services/verification.service';
+import { AccountsModule } from '../accounts/accounts.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { VerificationService } from './services/verification.service';
       PasswordResetToken,
       OAuthAccount,
     ]),
+    AccountsModule,
   ],
   controllers: [
     AuthController,

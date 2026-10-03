@@ -152,6 +152,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
     this.loginLimiter.reset(key);
+    if (user.deletedAt) {
+      throw new UnauthorizedException('This account has been deleted');
+    }
+    if (user.status === 'suspended') {
+      throw new ForbiddenException(
+        'This account is suspended. Contact the municipality for assistance.',
+      );
+    }
     if (
       this.requireEmailVerification &&
       this.verification &&

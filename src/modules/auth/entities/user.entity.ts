@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -69,6 +70,14 @@ export class User {
 
   @Column({ name: 'notification_prefs', type: 'json', nullable: true })
   notificationPrefs: Record<string, unknown> | null;
+
+  @Index()
+  @Column({ type: 'varchar', length: 20, default: 'active' })
+  status: string;
+
+  @Index()
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

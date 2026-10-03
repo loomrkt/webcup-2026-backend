@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import type { ApiSuccessResponse } from '../../common/api-response';
 import { success } from '../../common/api-response';
 import { RateLimitGuard, Throttle } from '../../common/rate-limit.guard';
@@ -14,11 +22,16 @@ import { UpdateOnboardingDto, UpdatePreferencesDto } from './dto/profile.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService, LoginResult } from './services/auth.service';
+import { DeleteOwnAccountDto } from '../accounts/dto/accounts.dto';
+import { AccountsService } from '../accounts/accounts.service';
 
 @Controller('auth')
 @UseGuards(RateLimitGuard)
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly accountsService: AccountsService,
+  ) {}
 
   @Post('register')
   @Throttle({ limit: 10, windowSec: 900 })
@@ -144,6 +157,16 @@ export class AuthController {
       await this.authService.profileCompletion(currentUser.id),
       'Profile completion fetched',
     );
+  }
+
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  async deleteOwnAccount(
+    @CurrentUser() currentUser: { id: string },
+    @Body() body: DeleteOwnAccountDto,
+  ): Promise<ApiSuccessResponse<null>> {
+    await this.accountsService.deleteOwnAccount(currentUser.id, body);
+    return success(null, 'Account deleted');
   }
 
   @Post('forgot-password')
