@@ -30,37 +30,52 @@ export class DashboardService {
   ) {}
 
   async stats() {
-    const totalUsers = await this.users.count();
-    const activeServices = await this.services.count({
-      where: { active: true },
-    });
-    const publishedPublications = await this.publications.count({
-      where: { published: true },
-    });
-    const newContactMessages = await this.contacts.count({
-      where: { status: 'new' },
-    });
+    const byStatus = (status: Request['status']) =>
+      this.requests.count({ where: { status } });
+
+    const [
+      totalUsers,
+      activeServices,
+      publishedPublications,
+      newContactMessages,
+      totalRequests,
+      requestsByDay,
+      recentRequests,
+      latestContactMessages,
+      recentActivity,
+    ] = await Promise.all([
+      this.users.count(),
+      this.services.count({ where: { active: true } }),
+      this.publications.count({ where: { published: true } }),
+      this.contacts.count({ where: { status: 'new' } }),
+      this.requests.count(),
+      this.requestsByDay(),
+      this.requests.find({
+        relations: { citizen: true },
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      this.contacts.find({
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      this.history.find({
+        relations: { request: true, createdBy: true },
+        order: { createdAt: 'DESC' },
+        take: 10,
+      }),
+    ]);
+
+    const statusCounts = await Promise.all(
+      REQUEST_STATUSES.map((status) =>
+        byStatus(status).then((count) => [status, count] as const),
+      ),
+    );
     const requestsByStatus: Record<string, number> = {};
-    for (const status of REQUEST_STATUSES) {
-      requestsByStatus[status] = await this.requests.count({
-        where: { status },
-      });
+    for (const [status, count] of statusCounts) {
+      requestsByStatus[status] = count;
     }
-    const totalRequests = await this.requests.count();
-    const recentRequests = await this.requests.find({
-      relations: { citizen: true },
-      order: { createdAt: 'DESC' },
-      take: 5,
-    });
-    const latestContactMessages = await this.contacts.find({
-      order: { createdAt: 'DESC' },
-      take: 5,
-    });
-    const recentActivity = await this.history.find({
-      relations: { request: true, createdBy: true },
-      order: { createdAt: 'DESC' },
-      take: 10,
-    });
+
     return {
       totalUsers,
       activeServices,
@@ -68,7 +83,7 @@ export class DashboardService {
       newContactMessages,
       totalRequests,
       requestsByStatus,
-      requestsByDay: await this.requestsByDay(),
+      requestsByDay,
       recentRequests,
       recentActivity,
       latestContactMessages,

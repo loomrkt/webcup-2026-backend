@@ -49,4 +49,16 @@ export class MailService {
     await this.transporter.sendMail({ from: this.from, to, subject, text });
     this.logger.log(`mail sent to ${to} (${subject})`);
   }
+
+  /**
+   * Envoi en arrière-plan (fire-and-forget) : la requête HTTP répond sans
+   * attendre le SMTP. Les erreurs sont loguées, jamais propagées.
+   */
+  sendMailInBackground(to: string, subject: string, text: string): void {
+    void this.sendMail(to, subject, text).catch((error: unknown) => {
+      this.logger.warn(
+        `background mail failed to ${to} (${subject}) — ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    });
+  }
 }

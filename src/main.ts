@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 
@@ -13,7 +14,10 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: ['https://loomrkt.madagascar.webcup.hodi.cloud', 'http://localhost:3000'],
+    origin: [
+      'http://localhost:3000',
+      'https://loomrkt.madagascar.webcup.hodi.cloud',
+    ],
     credentials: true,
   });
 
@@ -25,6 +29,9 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // Compression gzip des réponses (JSON volumineux divisés par ~5-10).
+  app.use(compression());
 
   app.setGlobalPrefix('api');
 
