@@ -80,7 +80,10 @@ export class TokenService {
     });
   }
 
-  async issueTokenPair(user: User): Promise<TokenPair> {
+  async issueTokenPair(
+    user: User,
+    context: { ip?: string | null; userAgent?: string | null } = {},
+  ): Promise<TokenPair> {
     const accessToken = this.signAccessToken(user.id, user.email);
     const refreshToken = this.signRefreshToken(user.id);
     await this.refreshTokens.save(
@@ -88,6 +91,8 @@ export class TokenService {
         token: hashToken(refreshToken),
         userId: user.id,
         expiresAt: this.refreshExpiry(),
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
       }),
     );
     return { accessToken, refreshToken };

@@ -19,3 +19,21 @@ export class VerifyTwoFactorDto {
   @IsString()
   pendingToken: string;
 }
+
+export class RecoverTwoFactorDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  pendingToken: string;
+}
+
+export class SendEmailMfaCodeDto {
+  @IsString()
+  pendingToken: string;
+}
+
+export class DisableEmailMfaDto {
+  @IsString()
+  code: string;
+}

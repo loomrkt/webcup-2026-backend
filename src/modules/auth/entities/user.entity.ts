@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -21,6 +22,24 @@ export class User {
   @Column({ unique: true, type: 'varchar' })
   email: string;
 
+  @Column({ name: 'first_name', type: 'varchar', nullable: true })
+  firstName: string | null;
+
+  @Column({ name: 'last_name', type: 'varchar', nullable: true })
+  lastName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  phone: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  address: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  city: string | null;
+
+  @Column({ name: 'birth_date', type: 'date', nullable: true })
+  birthDate: string | null;
+
   @Column({ name: 'password_hash', type: 'varchar', nullable: true })
   passwordHash: string | null;
 
@@ -35,10 +54,43 @@ export class User {
   recoveryCodes: string[] | null;
   // @purge:2fa-end
 
+  // F53 — seconde étape de vérification par code envoyé par email
+  @Column({ name: 'mfa_email_active', type: 'boolean', default: false })
+  mfaEmailActive: boolean;
+
   // @purge:verif-start
   @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
   emailVerifiedAt: Date | null;
   // @purge:verif-end
+
+  @Column({ type: 'varchar', length: 10, default: 'fr' })
+  language: string;
+
+  @Column({ type: 'json', nullable: true })
+  preferences: Record<string, unknown> | null;
+
+  @Column({ type: 'json', nullable: true })
+  onboarding: Record<string, unknown> | null;
+
+  @Column({ name: 'notification_prefs', type: 'json', nullable: true })
+  notificationPrefs: Record<string, unknown> | null;
+
+  @Index()
+  @Column({ type: 'varchar', length: 20, default: 'active' })
+  status: string;
+
+  @Index()
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
+
+  @Column({ name: 'locked_until', type: 'timestamptz', nullable: true })
+  lockedUntil: Date | null;
+
+  @Column({ name: 'failed_login_count', type: 'int', default: 0 })
+  failedLoginCount: number;
+
+  @Column({ name: 'last_failed_at', type: 'timestamptz', nullable: true })
+  lastFailedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

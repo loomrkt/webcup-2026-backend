@@ -13,7 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { compare, hash } from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import {
   BCRYPT_ROUNDS,
   RBAC_SERVICE,
@@ -22,6 +22,7 @@ import {
   TwoFactorService,
   VERIFICATION_SERVICE,
   VerificationService,
+  type MfaFactor,
 } from '../auth.constants';
 import { PasswordResetToken } from '../entities/password-reset-token.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
@@ -29,8 +30,14 @@ import { User } from '../entities/user.entity';
 import { AttemptLimiter } from '../../../common/attempt-limiter';
 import { TooManyRequestsException } from '../../../common/rate-limit.guard';
 import { hashToken } from '../utils/token.util';
+import { EmailCodeService } from './email-code.service';
 import { MailService } from './mail.service';
 import { TokenService, TokenPair } from './token.service';
+import {
+  SecurityService,
+  type LoginContext,
+} from '../../security/security.service';
+import { AuditService } from '../../audit/audit.service';
 
 export type AuthUser = User &
   Partial<{
@@ -42,7 +49,11 @@ export type AuthUser = User &
 
 export type LoginResult =
   | (TokenPair & { requiresTwoFactor: false })
-  | { requiresTwoFactor: true; pendingToken: string };
+  | {
+      requiresTwoFactor: true;
+      pendingToken: string;
+      factors: MfaFactor[];
+    };
 
 export function toAuthUser(user: User): AuthUser {
   return user;
@@ -62,6 +73,9 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly tokenService: TokenService,
     private readonly mailService: MailService,
+    private readonly security: SecurityService,
+    private readonly audit: AuditService,
+    private readonly emailCodes: EmailCodeService,
     @Optional()
     @Inject(TWO_FACTOR_SERVICE)
     private readonly twoFactor?: TwoFactorService | null,
@@ -111,6 +125,7 @@ export class AuthService {
     }
     if (this.rbac) {
       await this.rbac.assignDefaultAdminIfFirstUser(saved.id);
+      await this.rbac.assignDefaultCitizenRoleIfMissing(saved.id);
     }
     return saved;
   }
@@ -138,7 +153,11 @@ export class AuthService {
     return ok ? toAuthUser(user) : null;
   }
 
-  async login(email: string, password: string): Promise<LoginResult> {
+  async login(
+    email: string,
+    password: string,
+    context: LoginContext = {},
+  ): Promise<LoginResult> {
     const key = email.toLowerCase().trim();
     if (this.loginLimiter.isLocked(key)) {
       throw new TooManyRequestsException(
@@ -148,9 +167,39 @@ export class AuthService {
     const user = await this.validateCredentials(email, password);
     if (!user) {
       this.loginLimiter.recordFailure(key);
+      const existing = await this.users.findOne({ where: { email: key } });
+      if (existing && !existing.deletedAt) {
+        const guard = await this.security.recordFailure(existing, context);
+        if (guard.locked) {
+          throw new TooManyRequestsException(
+            `Account temporarily locked after repeated failures. Try again in ${guard.retryAfterSec}s.`,
+          );
+        }
+      } else if (existing) {
+        await this.security.log('login_failed', key, context, {
+          reason: 'deleted_account',
+        });
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
     this.loginLimiter.reset(key);
+    if (user.deletedAt) {
+      throw new UnauthorizedException('This account has been deleted');
+    }
+    if (user.status === 'suspended') {
+      throw new ForbiddenException(
+        'This account is suspended. Contact the municipality for assistance.',
+      );
+    }
+    const guard = this.security.isLocked(user);
+    if (guard.locked) {
+      await this.security.log('login_locked', key, context, {
+        userId: user.id,
+      });
+      throw new TooManyRequestsException(
+        `Account temporarily locked. Try again in ${guard.retryAfterSec}s.`,
+      );
+    }
     if (
       this.requireEmailVerification &&
       this.verification &&
@@ -163,14 +212,16 @@ export class AuthService {
     if (this.enable2fa && this.twoFactor && this.twoFactor.isActive(user)) {
       return this.twoFactor.issuePendingLogin(user);
     }
+    await this.security.recordSuccess(user, context);
     return {
       requiresTwoFactor: false,
-      ...(await this.tokenService.issueTokenPair(user)),
+      ...(await this.tokenService.issueTokenPair(user, context)),
     };
   }
 
   async refresh(
     refreshToken: string,
+    context: LoginContext = {},
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload = this.tokenService.verifyRefreshToken(refreshToken);
     if (!payload.jti) {
@@ -202,6 +253,8 @@ export class AuthService {
         token: hashToken(newRefreshToken),
         userId: user.id,
         expiresAt: new Date(Date.now() + this.refreshExpiryMs()),
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
       }),
     );
     await this.refreshTokens.update(
@@ -230,6 +283,170 @@ export class AuthService {
     }
   }
 
+  // ─── D02 : connexion sans mot de passe (code envoyé par email) ────────────
+
+  private readonly passwordlessLimiter = new AttemptLimiter(5, 15 * 60 * 1000);
+
+  async passwordlessRequest(
+    email: string,
+    context: LoginContext = {},
+  ): Promise<void> {
+    const user = await this.users.findOne({
+      where: { email: email.toLowerCase().trim() },
+    });
+    if (!user || user.deletedAt) return;
+    await this.emailCodes.deliver(
+      user.id,
+      user.email,
+      'passwordless',
+      10,
+      'Votre code de connexion sans mot de passe',
+    );
+    await this.security.log('passwordless_requested', user.email, context, {
+      userId: user.id,
+    });
+  }
+
+  async passwordlessVerify(
+    email: string,
+    code: string,
+    context: LoginContext = {},
+  ): Promise<LoginResult> {
+    const key = email.toLowerCase().trim();
+    if (this.passwordlessLimiter.isLocked(key)) {
+      throw new TooManyRequestsException(
+        `Too many failed attempts. Try again in ${this.passwordlessLimiter.retryAfterSec(key)}s.`,
+      );
+    }
+    const user = await this.users.findOne({ where: { email: key } });
+    if (!user || user.deletedAt || !user.email) {
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+    if (user.status === 'suspended') {
+      throw new ForbiddenException(
+        'This account is suspended. Contact the municipality for assistance.',
+      );
+    }
+    const guard = this.security.isLocked(user);
+    if (guard.locked) {
+      throw new TooManyRequestsException(
+        `Account temporarily locked. Try again in ${guard.retryAfterSec}s.`,
+      );
+    }
+    const valid = await this.emailCodes.verify(user.id, 'passwordless', code);
+    if (!valid) {
+      this.passwordlessLimiter.recordFailure(key);
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+    this.passwordlessLimiter.reset(key);
+    await this.emailCodes.invalidate(user.id, 'passwordless');
+    if (!user.emailVerifiedAt) {
+      user.emailVerifiedAt = new Date();
+      await this.users.save(user);
+    }
+    await this.security.recordSuccess(user, context);
+    await this.security.log('passwordless_verified', user.email, context, {
+      userId: user.id,
+    });
+    if (this.enable2fa && this.twoFactor && this.twoFactor.isActive(user)) {
+      return this.twoFactor.issuePendingLogin(user);
+    }
+    return {
+      requiresTwoFactor: false,
+      ...(await this.tokenService.issueTokenPair(user, context)),
+    };
+  }
+
+  // ─── F54 : sessions actives et révocation ─────────────────────────────────
+
+  async sessions(
+    userId: string,
+    currentRefreshToken?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      ip: string | null;
+      userAgent: string | null;
+      createdAt: Date;
+      expiresAt: Date;
+      current: boolean;
+    }>
+  > {
+    const now = new Date();
+    const currentHash = currentRefreshToken
+      ? hashToken(currentRefreshToken)
+      : null;
+    const tokens = await this.refreshTokens.find({
+      where: { userId, revokedAt: IsNull() },
+      order: { createdAt: 'DESC' },
+    });
+    return tokens
+      .filter((t) => t.expiresAt > now)
+      .map((t) => ({
+        id: t.id,
+        ip: t.ip ?? null,
+        userAgent: t.userAgent ?? null,
+        createdAt: t.createdAt,
+        expiresAt: t.expiresAt,
+        current: currentHash !== null && t.token === currentHash,
+      }));
+  }
+
+  async revokeSession(
+    userId: string,
+    sessionId: string,
+    context: LoginContext = {},
+  ): Promise<{ id: string; revoked: boolean }> {
+    const token = await this.refreshTokens.findOne({
+      where: { id: sessionId, userId },
+    });
+    if (!token || token.revokedAt) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.refreshTokens.update(
+      { id: token.id },
+      { revokedAt: new Date() },
+    );
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (user) {
+      await this.security.log('session_revoked', user.email, context, {
+        userId,
+        sessionId,
+      });
+    }
+    return { id: token.id, revoked: true };
+  }
+
+  async revokeAllSessions(
+    userId: string,
+    exceptRefreshToken?: string,
+    context: LoginContext = {},
+  ): Promise<{ revoked: number }> {
+    const exceptHash = exceptRefreshToken
+      ? hashToken(exceptRefreshToken)
+      : null;
+    const tokens = await this.refreshTokens.find({
+      where: { userId, revokedAt: IsNull() },
+    });
+    const toRevoke = tokens.filter(
+      (t) => t.expiresAt > new Date() && t.token !== exceptHash,
+    );
+    if (toRevoke.length > 0) {
+      await this.refreshTokens.update(
+        { id: In(toRevoke.map((t) => t.id)) },
+        { revokedAt: new Date() },
+      );
+    }
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (user) {
+      await this.security.log('session_revoked', user.email, context, {
+        userId,
+        revokedCount: toRevoke.length,
+      });
+    }
+    return { revoked: toRevoke.length };
+  }
+
   async getUserById(id: string): Promise<AuthUser | null> {
     const user = await this.users.findOne({ where: { id } });
     return user ? toAuthUser(user) : null;
@@ -239,7 +456,141 @@ export class AuthService {
     return this.getUserById(userId);
   }
 
-  async forgotPassword(email: string): Promise<void> {
+  async getProfileWithRoles(userId: string) {
+    const user = await this.getUserById(userId);
+    if (!user) return null;
+    const roles = (await this.rbac?.rolesForUser(userId)) ?? [];
+    const permissions = (await this.rbac?.effectivePermissions(userId)) ?? [];
+    return {
+      id: user.id,
+      email: user.email,
+      emailVerified: !!user.emailVerifiedAt,
+      totpActive: user.totpActive ?? false,
+      mfaEmailActive: user.mfaEmailActive ?? false,
+      profile: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        address: user.address,
+        city: user.city,
+      },
+      language: user.language ?? 'fr',
+      preferences: user.preferences ?? {},
+      onboarding: user.onboarding ?? {
+        status: 'not_started',
+        completedSteps: [],
+      },
+      roles,
+      permissions,
+    };
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: {
+      firstName?: string | null;
+      lastName?: string | null;
+      phone?: string | null;
+      address?: string | null;
+      city?: string | null;
+    },
+  ): Promise<AuthUser | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (dto.firstName !== undefined) user.firstName = dto.firstName ?? null;
+    if (dto.lastName !== undefined) user.lastName = dto.lastName ?? null;
+    if (dto.phone !== undefined) user.phone = dto.phone ?? null;
+    if (dto.address !== undefined) user.address = dto.address ?? null;
+    if (dto.city !== undefined) user.city = dto.city ?? null;
+    return toAuthUser(await this.users.save(user));
+  }
+
+  async updatePreferences(
+    userId: string,
+    dto: {
+      language?: string;
+      textSize?: string;
+      highContrast?: boolean;
+      reducedMotion?: boolean;
+      readableFont?: boolean;
+      lineSpacing?: string;
+      colorScheme?: string;
+      colorBlind?: string;
+      plainLanguage?: boolean;
+    },
+  ): Promise<AuthUser | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (dto.language !== undefined) user.language = dto.language;
+    const prefs = { ...(user.preferences ?? {}) };
+    if (dto.textSize !== undefined) prefs.textSize = dto.textSize;
+    if (dto.highContrast !== undefined) prefs.highContrast = dto.highContrast;
+    if (dto.reducedMotion !== undefined) {
+      prefs.reducedMotion = dto.reducedMotion;
+    }
+    if (dto.readableFont !== undefined) prefs.readableFont = dto.readableFont;
+    if (dto.lineSpacing !== undefined) prefs.lineSpacing = dto.lineSpacing;
+    if (dto.colorScheme !== undefined) prefs.colorScheme = dto.colorScheme;
+    if (dto.colorBlind !== undefined) prefs.colorBlind = dto.colorBlind;
+    if (dto.plainLanguage !== undefined) {
+      prefs.plainLanguage = dto.plainLanguage;
+    }
+    user.preferences = prefs;
+    return toAuthUser(await this.users.save(user));
+  }
+
+  async getOnboarding(userId: string): Promise<Record<string, unknown> | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    return user.onboarding ?? { status: 'not_started', completedSteps: [] };
+  }
+
+  async updateOnboarding(
+    userId: string,
+    dto: {
+      status?: 'not_started' | 'in_progress' | 'completed';
+      completedSteps?: string[];
+    },
+  ): Promise<Record<string, unknown> | null> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const onboarding = {
+      status: 'not_started',
+      completedSteps: [] as string[],
+      ...(user.onboarding ?? {}),
+    };
+    if (dto.status !== undefined) onboarding.status = dto.status;
+    if (dto.completedSteps !== undefined) {
+      onboarding.completedSteps = [...new Set(dto.completedSteps)];
+    }
+    user.onboarding = onboarding;
+    await this.users.save(user);
+    return onboarding;
+  }
+
+  async profileCompletion(userId: string) {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const fields = [
+      { key: 'firstName', filled: !!user.firstName },
+      { key: 'lastName', filled: !!user.lastName },
+      { key: 'phone', filled: !!user.phone },
+      { key: 'address', filled: !!user.address },
+      { key: 'city', filled: !!user.city },
+      { key: 'emailVerified', filled: !!user.emailVerifiedAt },
+    ];
+    const filled = fields.filter((f) => f.filled).length;
+    return {
+      percentage: Math.round((filled / fields.length) * 100),
+      missing: fields.filter((f) => !f.filled).map((f) => f.key),
+      complete: filled === fields.length,
+    };
+  }
+
+  async forgotPassword(
+    email: string,
+    context: LoginContext = {},
+  ): Promise<void> {
     const user = await this.users.findOne({
       where: { email: email.toLowerCase().trim() },
     });
@@ -259,6 +610,9 @@ export class AuthService {
     } else {
       throw new BadRequestException('Email service not configured');
     }
+    await this.security.log('password_reset_requested', user.email, context, {
+      userId: user.id,
+    });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -274,5 +628,11 @@ export class AuthService {
     user.passwordHash = await hash(newPassword, BCRYPT_ROUNDS);
     await this.users.save(user);
     await this.resetTokens.update({ id: record.id }, { usedAt: new Date() });
+    await this.security.log(
+      'password_reset',
+      user.email,
+      {},
+      { userId: user.id },
+    );
   }
 }

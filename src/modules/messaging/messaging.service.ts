@@ -522,7 +522,18 @@ export class MessagingService {
     if (query.before) {
       qb.andWhere('m.createdAt < :before', { before: new Date(query.before) });
     }
-    
+    // @purge:search-start
+    const search = query.search?.trim();
+    if (search) {
+      if (this.e2eeEnabled) {
+        throw new BadRequestException(
+          'Server-side search is disabled when E2EE is enabled',
+        );
+      }
+      qb.andWhere('m.content ILIKE :search', { search: `%${search}%` });
+    }
+    // @purge:search-end
+
     const messages = await qb.getMany();
     // @purge:replies-start
     return this.attachReplyTo(messages);

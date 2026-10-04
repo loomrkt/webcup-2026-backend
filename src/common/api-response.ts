@@ -11,6 +11,7 @@ export interface PaginationMeta {
   limit: number;
   total: number;
   totalPages: number;
+  unreadCount?: number;
 }
 
 export interface ApiResponse<T = unknown> {

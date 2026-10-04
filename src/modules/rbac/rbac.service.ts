@@ -5,7 +5,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,7 +32,6 @@ import { MODULE_PERMISSIONS } from './seed/module-permissions.seed'; // @purge:s
 import { TENANT_SERVICE } from './rbac.constants';
 import type { TenantService } from './rbac.constants';
 
-
 // @purge:hierarchy-start
 type RbacUser = User &
   Partial<{
@@ -58,10 +56,7 @@ export class RbacService {
     private readonly config: ConfigService,
     @Inject(TENANT_SERVICE)
     private readonly tenant: TenantService,
-    
   ) {}
-
-  
 
   async isSuperAdmin(userId: string): Promise<boolean> {
     const userRoles = await this.userRolesRepo.find({
@@ -97,6 +92,19 @@ export class RbacService {
       for (const p of ur.role?.permissions ?? []) set.add(p.name);
     }
     return [...set];
+  }
+
+  async rolesForUser(
+    userId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const userRoles = await this.userRolesRepo.find({
+      where: { userId },
+      relations: { role: true },
+    });
+    return userRoles.map((ur) => ({
+      id: ur.roleId,
+      name: ur.role?.name ?? '',
+    }));
   }
 
   // @purge:hierarchy-start
@@ -253,7 +261,7 @@ export class RbacService {
         description: dto.description ?? null,
       }),
     );
-    
+
     return permission;
   }
 
@@ -277,7 +285,7 @@ export class RbacService {
       permission.description = dto.description ?? null;
     }
     const saved = await this.permissionsRepo.save(permission);
-    
+
     return saved;
   }
 
@@ -285,7 +293,6 @@ export class RbacService {
     const permission = await this.permissionsRepo.findOne({ where: { id } });
     if (!permission) throw new NotFoundException('Permission not found');
     await this.permissionsRepo.delete({ id });
-    
   }
 
   async listRoles(actorId: string): Promise<Role[]> {
@@ -366,7 +373,7 @@ export class RbacService {
       where: { id: In(dto.permissionIds) },
     });
     const savedRole = await this.rolesRepo.save(role);
-    
+
     return savedRole;
   }
 
@@ -428,7 +435,7 @@ export class RbacService {
       });
     }
     const updatedRole = await this.rolesRepo.save(role);
-    
+
     return updatedRole;
   }
 
@@ -453,7 +460,6 @@ export class RbacService {
     }
     // @purge:hierarchy-end
     await this.rolesRepo.delete({ id });
-    
   }
 
   // @purge:hierarchy-start
@@ -516,7 +522,7 @@ export class RbacService {
         }),
       );
     }
-    
+
     return saved;
   }
 
@@ -548,7 +554,7 @@ export class RbacService {
             canCreateSubUsers: dto.canCreateSubUsers ?? false,
           }),
         );
-    
+
     return assignment;
   }
 
@@ -596,14 +602,16 @@ export class RbacService {
   }
 
   async seedIfNeeded(): Promise<void> {
-    if (this.boolEnv('RBAC_DEFAULT_ADMIN_ROLE', true)) {
-      await this.ensureAdminRole();
-    }
+    if (!this.boolEnv('RBAC_DEFAULT_ADMIN_ROLE', true)) return;
+    await this.ensureAdminRole();
     // @purge:seed-start
     if (this.boolEnv('RBAC_SEED_PERMISSIONS', true)) {
       await this.seedPermissions();
     }
     // @purge:seed-end
+    if (this.boolEnv('RBAC_SEED_DEFAULT_ROLES', true)) {
+      await this.ensureDefaultRoles();
+    }
   }
 
   async assignDefaultAdminIfFirstUser(userId: string): Promise<void> {
@@ -646,6 +654,115 @@ export class RbacService {
       role = await this.rolesRepo.save(role);
     }
     return role;
+  }
+
+  async assignDefaultCitizenRoleIfMissing(userId: string): Promise<void> {
+    if (!this.boolEnv('RBAC_SEED_DEFAULT_ROLES', true)) return;
+    if (await this.isSuperAdmin(userId)) return;
+    const role = await this.rolesRepo.findOne({ where: { name: 'citoyen' } });
+    if (!role) return;
+    const existing = await this.userRolesRepo.findOne({
+      where: { userId, roleId: role.id },
+    });
+    if (existing) return;
+    await this.userRolesRepo.save(
+      this.userRolesRepo.create({ userId, roleId: role.id }),
+    );
+  }
+
+  private async ensureDefaultRoles(): Promise<void> {
+    const definitions: Array<{
+      name: string;
+      description: string;
+      permissions: string[];
+    }> = [
+      {
+        name: 'citoyen',
+        description: 'Citizen — standard platform user',
+        permissions: [
+          'requests.create',
+          'requests.read',
+          'requests.support',
+          'participation.concerns.create',
+          'participation.concerns.read',
+          'privacy.export',
+          'consultations.respond',
+          'feedback.read',
+          'feedback.create',
+          'ideas.read',
+          'ideas.create',
+          'notifications.read',
+          'notifications.update',
+          'guides.read',
+          'appointments.read',
+          'appointments.create',
+        ],
+      },
+      {
+        name: 'agent_municipal',
+        description: 'Municipal agent — handles citizen requests and content',
+        permissions: [
+          'services.read',
+          'news.read',
+          'contact.read',
+          'contact.update',
+          'requests.read',
+          'requests.update',
+          'participation.concerns.read',
+          'participation.concerns.update',
+          'projects.manage',
+          'consultations.manage',
+          'feedback.manage',
+          'ideas.manage',
+          'dashboard.read',
+          'nova-terra.read',
+          'i18n.read',
+          'i18n.manage',
+          'announcements.read',
+          'announcements.create',
+          'announcements.update',
+          'announcements.delete',
+          'alerts.read',
+          'alerts.create',
+          'alerts.update',
+          'alerts.delete',
+          'notifications.read',
+          'notifications.update',
+          'accounts.read',
+          'accounts.update',
+          'accounts.delete',
+          'rbac.users.read',
+          'guides.read',
+          'guides.manage',
+          'mobility.read',
+          'mobility.create',
+          'mobility.update',
+          'mobility.delete',
+          'security.read',
+          'appointments.read',
+          'appointments.create',
+          'appointments.manage',
+          'places.manage',
+          'glossary.manage',
+          'audit.read',
+        ],
+      },
+    ];
+    for (const def of definitions) {
+      let role = await this.rolesRepo.findOne({ where: { name: def.name } });
+      if (!role) {
+        role = this.rolesRepo.create({
+          name: def.name,
+          description: def.description,
+        });
+        role = await this.rolesRepo.save(role);
+      }
+      const perms = await this.permissionsRepo.find({
+        where: { name: In(def.permissions) },
+      });
+      role.permissions = perms;
+      await this.rolesRepo.save(role);
+    }
   }
 
   // @purge:seed-start
