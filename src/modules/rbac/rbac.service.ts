@@ -749,7 +749,10 @@ export class RbacService {
       },
     ];
     for (const def of definitions) {
-      let role = await this.rolesRepo.findOne({ where: { name: def.name } });
+      let role = await this.rolesRepo.findOne({
+        where: { name: def.name },
+        relations: { permissions: true },
+      });
       if (!role) {
         role = this.rolesRepo.create({
           name: def.name,
@@ -760,8 +763,13 @@ export class RbacService {
       const perms = await this.permissionsRepo.find({
         where: { name: In(def.permissions) },
       });
-      role.permissions = perms;
-      await this.rolesRepo.save(role);
+      const same =
+        role.permissions?.length === perms.length &&
+        role.permissions.every((p) => perms.some((q) => q.id === p.id));
+      if (!same) {
+        role.permissions = perms;
+        await this.rolesRepo.save(role);
+      }
     }
   }
 
@@ -769,17 +777,13 @@ export class RbacService {
   private async seedPermissions(): Promise<void> {
     // default catalogue + permissions contributed by selected modules
     const all = [...DEFAULT_PERMISSIONS, ...MODULE_PERMISSIONS];
-    for (const def of all) {
-      const existing = await this.permissionsRepo.findOne({
-        where: { name: def.name },
-      });
-      if (existing) continue;
-      await this.permissionsRepo.save(
-        this.permissionsRepo.create({
-          name: def.name,
-          description: def.description,
-        }),
-      );
+    const existing = await this.permissionsRepo.find({
+      select: { name: true },
+    });
+    const names = new Set(existing.map((p) => p.name));
+    const missing = all.filter((p) => !names.has(p.name));
+    if (missing.length > 0) {
+      await this.permissionsRepo.save(this.permissionsRepo.create(missing));
     }
   }
   // @purge:seed-end

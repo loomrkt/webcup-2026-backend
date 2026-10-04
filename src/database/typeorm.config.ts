@@ -49,7 +49,14 @@ export const typeOrmModule = TypeOrmModule.forRootAsync({
       password: url.password ? decodeURIComponent(url.password) : undefined,
       ssl: { rejectUnauthorized: false },
       autoLoadEntities: true,
-      synchronize: config.get('NODE_ENV') !== 'production',
+      // Désactivé par défaut : synchronize rejoue du DDL sur chaque boot
+      // (très lent sur une DB distante, 43 entités). À activer
+      // explicitement en local uniquement (DB_SYNCHRONIZE=true).
+      synchronize:
+        String(config.get('DB_SYNCHRONIZE', 'false')).toLowerCase() === 'true',
+      // Échoue vite plutôt que de réessayer 10× (défaut) pendant ~40 s.
+      retryAttempts: 3,
+      retryDelay: 1000,
       extra: { options: options.join(' ') },
     };
   },
