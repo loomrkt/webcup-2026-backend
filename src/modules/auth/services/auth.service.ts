@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { compare, hash } from 'bcryptjs';
+import { compare, hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { In, IsNull, Repository } from 'typeorm';
 import {
@@ -602,7 +602,11 @@ export class AuthService {
     const link = `${this.frontendUrl}/reset-password?token=${token}`;
     const text = `Reset your password: ${link}`;
     if (this.mailService.isConfigured) {
-      await this.mailService.sendMail(user.email, 'Reset your password', text);
+      this.mailService.sendMailInBackground(
+        user.email,
+        'Reset your password',
+        text,
+      );
     } else if (this.config.get('NODE_ENV') !== 'production') {
       this.logger.warn(
         `Mail not configured — reset link for ${user.email}: ${link}`,

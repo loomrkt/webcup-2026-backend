@@ -24,7 +24,7 @@ import {
   // @purge:hierarchy-end
 } from './dto/rbac.dto';
 // @purge:hierarchy-start
-import { hash } from 'bcryptjs';
+import { hash } from 'bcrypt';
 import { BCRYPT_ROUNDS } from '../auth/auth.constants';
 // @purge:hierarchy-end
 import { DEFAULT_PERMISSIONS } from './seed/permissions.seed'; // @purge:seed-import
