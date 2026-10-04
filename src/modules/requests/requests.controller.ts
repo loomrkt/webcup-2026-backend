@@ -16,6 +16,7 @@ import { paginated, success } from '../../common/api-response';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../rbac/decorators/require-permission.decorator';
 import { PermissionsGuard } from '../rbac/guards/permissions.guard';
+import { RateLimitGuard, Throttle } from '../../common/rate-limit.guard';
 import {
   CreateRequestDto,
   ListRequestsQueryDto,
@@ -80,6 +81,8 @@ export class RequestsController {
   constructor(private readonly requests: RequestsService) {}
 
   @Post()
+  @UseGuards(RateLimitGuard)
+  @Throttle({ limit: 20, windowSec: 900 })
   @RequirePermission('requests.create')
   async create(
     @CurrentUser() currentUser: { id: string },
@@ -175,6 +178,19 @@ export class RequestsController {
       await this.requests.indicators(currentUser.id),
       'Request indicators fetched',
     );
+  }
+
+  @Get('export/download')
+  @RequirePermission('requests.read')
+  async exportDownload(@Res() res: Response): Promise<string> {
+    const rows = await this.requests.allRequestsSummary();
+    const csv = toRequestsCsv(rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="demandes-agents.csv"',
+    );
+    return csv;
   }
 
   @Get(':id')

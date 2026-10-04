@@ -83,6 +83,16 @@ const DEMO_PLACES: Array<{
     hours: 'Lun–Ven 8h30–17h30',
     emergency: false,
   },
+  {
+    name: 'Maison des associations',
+    category: 'associations',
+    address: '5 Rue des Solidarités, Quartier Est',
+    latitude: 48.8622,
+    longitude: 2.3622,
+    phone: '02 99 00 12 34',
+    hours: 'Mar–Sam 10h–18h',
+    emergency: false,
+  },
 ];
 
 @Injectable()
@@ -103,12 +113,15 @@ export class PlacesService implements OnModuleInit {
       return;
     }
     try {
-      const count = await this.places.count();
-      if (count === 0) {
-        await this.places.save(this.places.create(DEMO_PLACES));
-        this.logger.log(
-          `Places demo data seeded (${DEMO_PLACES.length} places)`,
-        );
+      let inserted = 0;
+      for (const demo of DEMO_PLACES) {
+        const existing = await this.places.findOneBy({ name: demo.name });
+        if (existing) continue;
+        await this.places.save(this.places.create(demo));
+        inserted += 1;
+      }
+      if (inserted > 0) {
+        this.logger.log(`Places demo data seeded (${inserted} new places)`);
       }
     } catch (error) {
       this.logger.warn(

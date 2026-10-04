@@ -28,11 +28,15 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
-  // F61 — performances : laisse les navigateurs et caches intermédiaires
-  // mettre en cache les GET publics (réponses identiques pour tous).
+  // F77 — surcharge serveurs : les GET publics sont identiques pour tous,
+  // laisse les navigateurs et caches intermédiaires absorber le trafic
+  // répété (max-age = navigateur, s-maxage = CDN/proxy partagé).
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET' && !req.headers.authorization) {
-      res.setHeader('Cache-Control', 'public, max-age=60');
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=120, s-maxage=300, stale-while-revalidate=60',
+      );
     }
     next();
   });

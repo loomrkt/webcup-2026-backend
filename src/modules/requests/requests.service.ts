@@ -1,11 +1,12 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { RbacService } from '../rbac/rbac.service';
 import { AuditService } from '../audit/audit.service';
@@ -102,10 +103,23 @@ export class RequestsService {
       });
       if (!service) throw new NotFoundException('Service not found');
     }
+    const title = dto.title.trim();
+    const recent = await this.requests.findOne({
+      where: {
+        citizenId: actorId,
+        title,
+        createdAt: MoreThanOrEqual(new Date(Date.now() - 2 * 60_000)),
+      },
+    });
+    if (recent) {
+      throw new ConflictException(
+        'Une demande similaire vient d’être envoyée. Suivez sa progression dans votre espace au lieu de la renvoyer.',
+      );
+    }
     const request = await this.requests.save(
       this.requests.create({
         ref: this.generateRef(),
-        title: dto.title.trim(),
+        title,
         description: dto.description,
         category: dto.category ?? null,
         status: 'pending',
@@ -215,6 +229,14 @@ export class RequestsService {
   async myRequestsSummary(userId: string): Promise<Request[]> {
     return this.requests.find({
       where: { citizenId: userId },
+      relations: { history: true, service: true },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /** F88 — récapitulatif téléchargeable de toutes les demandes (agents). */
+  async allRequestsSummary(): Promise<Request[]> {
+    return this.requests.find({
       relations: { history: true, service: true },
       order: { createdAt: 'DESC' },
     });
