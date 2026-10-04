@@ -6,6 +6,7 @@ import { RateLimitGuard, Throttle } from '../../common/rate-limit.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import {
   DisableEmailMfaDto,
+  RecoverTwoFactorDto,
   SendEmailMfaCodeDto,
   TotpActivateDto,
   TotpDeactivateDto,
@@ -34,6 +35,23 @@ export class TwoFactorController {
       },
     );
     return success(result, 'Two-factor verified');
+  }
+
+  @Post('2fa/recovery')
+  @Throttle({ limit: 10, windowSec: 900 })
+  async recover(
+    @Req() req: Request,
+    @Body() body: RecoverTwoFactorDto,
+  ): Promise<ApiSuccessResponse<LoginResult>> {
+    const result = await this.twoFactorService.verifyRecovery(
+      body.pendingToken,
+      body.code,
+      {
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      },
+    );
+    return success(result, 'Recovery code accepted');
   }
 
   @Post('2fa/email/send-code')

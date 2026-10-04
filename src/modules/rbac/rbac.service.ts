@@ -602,9 +602,8 @@ export class RbacService {
   }
 
   async seedIfNeeded(): Promise<void> {
-    if (this.boolEnv('RBAC_DEFAULT_ADMIN_ROLE', true)) {
-      await this.ensureAdminRole();
-    }
+    if (!this.boolEnv('RBAC_DEFAULT_ADMIN_ROLE', true)) return;
+    await this.ensureAdminRole();
     // @purge:seed-start
     if (this.boolEnv('RBAC_SEED_PERMISSIONS', true)) {
       await this.seedPermissions();
@@ -732,6 +731,7 @@ export class RbacService {
           'accounts.read',
           'accounts.update',
           'accounts.delete',
+          'rbac.users.read',
           'guides.read',
           'guides.manage',
           'mobility.read',
@@ -739,6 +739,8 @@ export class RbacService {
           'mobility.update',
           'mobility.delete',
           'security.read',
+          'appointments.read',
+          'appointments.create',
           'appointments.manage',
           'places.manage',
           'glossary.manage',
