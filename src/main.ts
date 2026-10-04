@@ -18,10 +18,9 @@ async function bootstrap() {
   // Gzip les réponses (assets Swagger ~3 Mo -> ~1 Mo, swagger.json, JSON API).
   app.use(compression());
 
-  app.enableCors({
-    origin: '*',
-    credentials: true,
-  });
+app.enableCors({
+  origin: '*',
+});
 
   app.useGlobalPipes(
     new ValidationPipe({
