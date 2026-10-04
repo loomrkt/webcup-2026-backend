@@ -19,9 +19,7 @@ async function bootstrap() {
   app.use(compression());
 
   app.enableCors({
-    origin: [
-      'https://loomrkt.madagascar.webcup.hodi.cloud',
-      'http://localhost:3000',
+    origin: ["*"
     ],
     credentials: true,
   });
