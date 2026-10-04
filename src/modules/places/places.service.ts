@@ -113,15 +113,14 @@ export class PlacesService implements OnModuleInit {
       return;
     }
     try {
-      let inserted = 0;
-      for (const demo of DEMO_PLACES) {
-        const existing = await this.places.findOneBy({ name: demo.name });
-        if (existing) continue;
-        await this.places.save(this.places.create(demo));
-        inserted += 1;
-      }
-      if (inserted > 0) {
-        this.logger.log(`Places demo data seeded (${inserted} new places)`);
+      const existing = await this.places.find({ select: { name: true } });
+      const names = new Set(existing.map((p) => p.name));
+      const missing = DEMO_PLACES.filter((demo) => !names.has(demo.name));
+      if (missing.length > 0) {
+        await this.places.save(this.places.create(missing));
+        this.logger.log(
+          `Places demo data seeded (${missing.length} new places)`,
+        );
       }
     } catch (error) {
       this.logger.warn(
