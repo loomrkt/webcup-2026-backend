@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { compare, hash } from 'bcryptjs';
+import { compare, hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { IsNull, In, MoreThan, Repository } from 'typeorm';
 import { BCRYPT_ROUNDS } from '../auth.constants';
@@ -96,7 +96,7 @@ export class EmailCodeService {
     const code = await this.generate(userId, purpose, ttlMinutes);
     const text = `Votre code est : ${code}\n\nIl expire dans ${ttlMinutes} minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.`;
     if (this.mail.isConfigured) {
-      await this.mail.sendMail(email, subject, text);
+      this.mail.sendMailInBackground(email, subject, text);
     } else if (this.config.get('NODE_ENV') !== 'production') {
       this.logger.warn(
         `Mail not configured — ${purpose} code for ${email}: ${code}`,

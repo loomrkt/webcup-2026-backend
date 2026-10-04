@@ -46,7 +46,11 @@ export class VerificationService {
     const link = `${this.frontendUrl}/verify-email?token=${token}`;
     const text = `Confirm your email: ${link}`;
     if (this.mailService.isConfigured) {
-      await this.mailService.sendMail(user.email, 'Confirm your email', text);
+      this.mailService.sendMailInBackground(
+        user.email,
+        'Confirm your email',
+        text,
+      );
     } else if (this.config.get('NODE_ENV') !== 'production') {
       this.logger.warn(
         `Mail not configured — verification link for ${user.email}: ${link}`,

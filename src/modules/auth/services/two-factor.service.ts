@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { compare, hash } from 'bcryptjs';
+import { compare, hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { BCRYPT_ROUNDS } from '../auth.constants';

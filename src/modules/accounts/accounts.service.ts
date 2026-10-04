@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { compare } from 'bcryptjs';
+import { compare } from 'bcrypt';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
